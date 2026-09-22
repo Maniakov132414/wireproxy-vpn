@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  wireproxy-vn:
+    build: .
+    container_name: wireproxy-vn
+    restart: unless-stopped
+    ports:
+      - "25344:25344"
+      - "25345:25345"
+    volumes:
+      - ./configs/wireproxy-vn.conf:/app/wireproxy.conf:ro
+
+  wireproxy-sg:
+    build: .
+    container_name: wireproxy-sg
+    restart: unless-stopped
+    ports:
+      - "25346:25346"
+      - "25347:25347"
+    volumes:
+      - ./configs/wireproxy-sg.conf:/app/wireproxy.conf:ro
+
+  wireproxy-jp:
+    build: .
+    container_name: wireproxy-jp
+    restart: unless-stopped
+    ports:
+      - "25348:25348"
+      - "25349:25349"
+    volumes:
+      - ./configs/wireproxy-jp.conf:/app/wireproxy.conf:ro
+
+  wireproxy-us:
+    build: .
+    container_name: wireproxy-us
+    restart: unless-stopped
+    ports:
+      - "25350:25350"
+      - "25351:25351"
+    volumes:
+      - ./configs/wireproxy-us.conf:/app/wireproxy.conf:ro

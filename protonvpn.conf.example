@@ -1,0 +1,39 @@
+# Wireproxy + WireGuard VPN (ProtonVPN / Mullvad / Cloudflare WARP / Custom)
+# Append [Socks5] and [http] sections to your downloaded WireGuard config file
+
+[Interface]
+# Paste your PrivateKey from your VPN provider
+PrivateKey = YOUR_PRIVATE_KEY_HERE
+# Your assigned VPN internal IP (e.g. 10.2.0.2/32)
+Address = 10.2.0.2/32
+# DNS server provided by VPN
+DNS = 10.2.0.1
+
+[Peer]
+# VPN Server's WireGuard PublicKey
+PublicKey = YOUR_VPN_SERVER_PUBLIC_KEY_HERE
+# Route all traffic through the VPN
+AllowedIPs = 0.0.0.0/0
+# Keep connection alive through NAT / firewalls
+PersistentKeepalive = 25
+# VPN Server IP and Port (e.g., 185.156.175.74:51820)
+Endpoint = VPN_SERVER_IP:51820
+
+# -------------------------------------------------------------
+# WIREPROXY PROXY EXPOSURE SECTIONS
+# -------------------------------------------------------------
+
+# Inbound SOCKS5 Proxy
+# Bind to 0.0.0.0 to allow remote access, or 127.0.0.1 for local only
+[Socks5]
+BindAddress = 0.0.0.0:25344
+# Optional authentication:
+# Username = user
+# Password = pass
+
+# Inbound HTTP Proxy
+[http]
+BindAddress = 0.0.0.0:25345
+# Optional authentication:
+# Username = user
+# Password = pass

@@ -1,0 +1,7 @@
+# Local binaries
+wireproxy.exe
+*.tar.gz
+*.zip
+
+# Logs
+*.log
