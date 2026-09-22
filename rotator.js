@@ -37,6 +37,23 @@ function loadProxiesFromConfigs() {
 
 let PROXIES = loadProxiesFromConfigs();
 
+// Auto-reload configs when files are added, modified, or removed
+if (fs.existsSync(CONFIGS_DIR)) {
+  let reloadTimeout = null;
+  fs.watch(CONFIGS_DIR, (eventType, filename) => {
+    if (filename && filename.endsWith('.conf')) {
+      clearTimeout(reloadTimeout);
+      reloadTimeout = setTimeout(() => {
+        const updated = loadProxiesFromConfigs();
+        if (updated.length > 0) {
+          PROXIES = updated;
+          console.log(`[Config Auto-Reload] Discovered ${PROXIES.length} proxy configurations in configs/`);
+        }
+      }, 500);
+    }
+  });
+}
+
 // Optional Authentication for Public Expose
 const PROXY_AUTH_USER = process.env.PROXY_USER || 'admin';
 const PROXY_AUTH_PASS = process.env.PROXY_PASS || 'proxy123';

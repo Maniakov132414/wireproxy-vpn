@@ -4,7 +4,10 @@ param (
     [string]$FilePath,
 
     [Parameter(Mandatory=$false)]
-    [string]$Name
+    [string]$Name,
+
+    [Parameter(Mandatory=$false)]
+    [switch]$Push
 )
 
 $currentDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -68,4 +71,27 @@ Write-Host " - Config:     $targetConf" -ForegroundColor Cyan
 Write-Host " - SOCKS5:     0.0.0.0:$nextSocks" -ForegroundColor Cyan
 Write-Host " - HTTP:       0.0.0.0:$nextHttp" -ForegroundColor Cyan
 Write-Host " - Pool:       Will be auto-included on port 10800" -ForegroundColor Green
+
+# If Wireproxy pool is currently running locally, start the new instance immediately
+$runningWireproxies = Get-Process wireproxy -ErrorAction SilentlyContinue
+if ($runningWireproxies) {
+    $wireproxyBin = Join-Path $currentDir "wireproxy.exe"
+    if (Test-Path $wireproxyBin) {
+        Write-Host " [*] Local pool is active - starting wireproxy for $Name..." -ForegroundColor Yellow
+        Start-Process -FilePath $wireproxyBin -ArgumentList "-c `"$targetConf`"" -WindowStyle Hidden
+        Write-Host " [+] New instance launched and active in local pool!" -ForegroundColor Green
+    }
+}
+
+# If -Push switch provided or user wants to sync to Railway
+if ($Push) {
+    Write-Host " [*] Auto-pushing to GitHub for Railway auto-deployment..." -ForegroundColor Yellow
+    git add $targetConf
+    git commit -m "feat: add $Name wireproxy server"
+    git push origin main
+    Write-Host " [+] Pushed to GitHub! Railway will automatically rebuild and deploy." -ForegroundColor Green
+} else {
+    Write-Host " [*] To push to Railway automatically, run: git commit -am 'add server'; git push" -ForegroundColor Gray
+}
+
 Write-Host "==========================================================" -ForegroundColor Green
