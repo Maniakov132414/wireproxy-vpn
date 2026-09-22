@@ -1,0 +1,6 @@
+.git
+.gitignore
+wireproxy.exe
+*.ps1
+backups/
+*.log
