@@ -51,7 +51,7 @@ function getNextProxy() {
   return proxy;
 }
 
-const ROTATOR_PORT = process.env.ROTATOR_PORT || 10800;
+const ROTATOR_PORT = parseInt(process.env.ROTATOR_PORT || process.env.PORT || '10800', 10);
 const BIND_ADDRESS = process.env.BIND_ADDRESS || '0.0.0.0';
 
 function checkAuth(req) {
