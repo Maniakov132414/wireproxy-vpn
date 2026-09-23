@@ -8,7 +8,7 @@ Hệ thống biến các cấu hình WireGuard VPN từ **ProtonVPN Plus** thàn
 
 * **Cổng Master Proxy Đa Giao Thức (`10800`)**: Lắng nghe trên cổng `10800` với cơ chế **Smart Protocol Sniffer**. Tự động phân tích byte đầu tiên để hỗ trợ cả **HTTP/HTTPS CONNECT** và **SOCKS5** trên cùng một cổng duy nhất.
 * **Xoay ngẫu nhiên 100% (100% Random Rotation)**: Mỗi request đến cổng Master `10800` được định tuyến hoàn toàn ngẫu nhiên đến một node trong nhóm node đang trực chiến, đồng thời các node dự phòng được nạp ngẫu nhiên (Fisher-Yates shuffle) và luân chuyển ngẫu nhiên liên tục.
-* **Tối ưu hóa độ trễ cho Netflix & Châu Á**: Tập trung vào 22 máy chủ mới tinh với độ trễ thấp và định tuyến CDN tốt nhất: **Việt Nam (8 node)**, **Singapore (5 node)**, **Nhật Bản (5 node)**, **Hồng Kông (2 node)**, **Đài Loan (1 node)**, và **Hàn Quốc (1 node)**.
+* **Tối ưu hóa độ trễ cho Netflix & Đa Quốc Gia**: Tập trung vào cụm **43 máy chủ Proton WireGuard mới tinh** trải rộng trên **27 quốc gia**: Việt Nam, Singapore, Nhật Bản, Hồng Kông, Đài Loan, Hàn Quốc, Ả Rập Xê-út, Afghanistan, Ai Cập, Albania, Algeria, Ấn Độ, Andorra, Angola, Áo, Argentina, Armenia, Azerbaijan, Ba Lan, Bắc Macedonia, Bahrain, Bangladesh, Belarus, Bhutan, Bỉ, Bồ Đào Nha, Campuchia.
 * **Kiểm tra sống tự động (Live Handshake Probe)**: Mỗi khi một node khởi động, rotator gửi gói tin kiểm tra kết nối qua tunnel tới `1.1.1.1` trong 3.5 giây. Nếu node bị Proton chặn handshake, hệ thống tự động loại bỏ và chuyển sang node sống tiếp theo, **loại trừ 100% rủi ro bị treo hoặc lỗi timeout cho bot**.
 * **Chuyển vùng thần tốc (Fast Failover 6s)**: Nếu kết nối gặp sự cố hoặc nghẽn mạng quá 6 giây, rotator sẽ tự động hủy socket và thử lại ngay lập tức trên node đệm tiếp theo.
 * **Hàng đợi đệm sẵn (Pre-warmed Buffer, 6 server)**: Luôn duy trì sẵn 6 máy chủ trực chiến luân phiên. Giới hạn 6 node giúp chừa lại 4 slot trống dưới trần 10 thiết bị của ProtonVPN cho PC và điện thoại cá nhân.
@@ -20,7 +20,7 @@ Hệ thống biến các cấu hình WireGuard VPN từ **ProtonVPN Plus** thàn
 
 ## 2. Bảng phân bổ Node & Địa chỉ IP
 
-Hệ thống hiện tại gồm **22 cụm máy chủ Proton WireGuard mới tinh** phân bổ khắp khu vực Châu Á:
+Hệ thống hiện tại gồm **43 cụm máy chủ Proton WireGuard mới tinh** trên **27 quốc gia**:
 
 | STT | Node | Quốc gia & Vị trí | Cổng HTTP | Cổng SOCKS5 | Trạng thái |
 | :-: | :--- | :--- | :-: | :-: | :-: |
@@ -46,6 +46,27 @@ Hệ thống hiện tại gồm **22 cụm máy chủ Proton WireGuard mới tin
 | 20 | `HK35` | 🇭🇰 Hồng Kông (HK#35) | `25439` | `25438` | Verified Live |
 | 21 | `TW13` | 🇹🇼 Đài Bắc (TW#13) | `25441` | `25440` | Verified Live |
 | 22 | `KR20` | 🇰🇷 Seoul (KR#20) | `25443` | `25442` | Verified Live |
+| 23 | `SA1` | 🇸🇦 Riyadh (SA#1) | `25445` | `25444` | Verified Live |
+| 24 | `AF1` | 🇦🇫 Kabul (AF#1) | `25447` | `25446` | Verified Live |
+| 25 | `EG1` | 🇪🇬 Cairo (EG#1) | `25449` | `25448` | Verified Live |
+| 26 | `AL26` | 🇦🇱 Tirana (AL#26) | `25451` | `25450` | Verified Live |
+| 27 | `DZ2` | 🇩🇿 Algiers (DZ#2) | `25453` | `25452` | Verified Live |
+| 28 | `IN14` | 🇮🇳 Mumbai (IN#14) | `25455` | `25454` | Verified Live |
+| 29 | `AD2` | 🇦🇩 Andorra (AD#2) | `25457` | `25456` | Verified Live |
+| 30 | `AO1` | 🇦🇴 Luanda (AO#1) | `25459` | `25458` | Verified Live |
+| 31 | `AT35` | 🇦🇹 Vienna (AT#35) | `25461` | `25460` | Verified Live |
+| 32 | `AR31` | 🇦🇷 Buenos Aires (AR#31) | `25463` | `25462` | Verified Live |
+| 33 | `AM2` | 🇦🇲 Yerevan (AM#2) | `25465` | `25464` | Verified Live |
+| 34 | `AZ2` | 🇦🇿 Baku (AZ#2) | `25467` | `25466` | Verified Live |
+| 35 | `PL52` | 🇵🇱 Warsaw (PL#52) | `25469` | `25468` | Verified Live |
+| 36 | `MK01` | 🇲🇰 Skopje (MK#01) | `25471` | `25470` | Verified Live |
+| 37 | `BH1` | 🇧🇭 Manama (BH#1) | `25473` | `25472` | Verified Live |
+| 38 | `BD2` | 🇧🇩 Dhaka (BD#2) | `25475` | `25474` | Verified Live |
+| 39 | `BY25` | 🇧🇾 Minsk (BY#25) | `25477` | `25476` | Verified Live |
+| 40 | `BT1` | 🇧🇹 Thimphu (BT#1) | `25479` | `25478` | Verified Live |
+| 41 | `BE43` | 🇧🇪 Brussels (BE#43) | `25481` | `25480` | Verified Live |
+| 42 | `PT8` | 🇵🇹 Lisbon (PT#8) | `25483` | `25482` | Verified Live |
+| 43 | `KH1` | 🇰🇭 Phnom Penh (KH#1) | `25485` | `25484` | Verified Live |
 
 ---
 
