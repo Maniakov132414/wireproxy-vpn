@@ -6,11 +6,12 @@ Hệ thống biến các cấu hình WireGuard VPN từ **ProtonVPN Plus** thàn
 
 ## 1. Cơ chế hoạt động & Điểm nổi bật
 
-* **Cổng Master Proxy (`10800`)**: Lắng nghe mọi request HTTP/HTTPS và tự động xoay vòng (Round-Robin) qua danh sách các IP sạch từ ProtonVPN.
-* **Đổi ca trực thông minh (Dynamic Shift Rotation)**: Để không bao giờ vượt quá giới hạn 10 kết nối đồng thời của ProtonVPN, hệ thống duy trì tối đa 7 máy chủ online cùng lúc (`MAX_ACTIVE=7`). Cứ mỗi 3 phút (`SHIFT_INTERVAL_SEC=180`), hệ thống tự động cho server cũ nghỉ ngơi và kích hoạt server mới từ hàng đợi vào thay thế mượt mà (zero downtime).
-* **Tự động phục hồi tức thì (Instant Auto-Healing)**: Nếu 1 server gặp lỗi timeout quá 2 lần liên tiếp, hệ thống lập tức khởi động 1 server dự phòng khác để thay thế trong vòng 1.5 giây mà không làm gián đoạn bot.
+* **Cổng Master Proxy (`10800`)**: Lắng nghe mọi request HTTP/HTTPS và phân phối đến các cụm máy chủ sạch của ProtonVPN.
+* **Xong là Tắt & Bật mới ngay lập tức (Ephemeral One-Shot Rotation)**: Mỗi khi 1 máy chủ VPN xử lý xong 1 request/kết nối của bot, tiến trình đó sẽ **tự động tắt ngay lập tức**, đồng thời hệ thống tự động kích hoạt máy chủ tiếp theo từ hàng đợi. Đảm bảo IP luôn luôn thay đổi liên tục cho từng tác vụ.
+* **Hàng đợi đệm sẵn (Pre-warmed Buffer, mặc định 5 server)**: Luôn duy trì sẵn 4–5 máy chủ trực chiến cùng lúc. Khi máy chủ cũ vừa tắt đi thì máy chủ mới đã được bật sẵn sàng từ trước, **hoàn toàn không có độ trễ kết nối**.
+* **Không cần Mật khẩu (No Auth)**: Cổng proxy mở trực tiếp, bot kết nối vào dùng ngay mà không cần cấu hình User/Pass rườm rà.
+* **An toàn tuyệt đối dưới trần 10 kết nối**: Vì chỉ giữ tối đa 4–5 server cùng lúc, hệ thống không bao giờ bị đụng giới hạn 10 kết nối đồng thời của ProtonVPN Plus, đường truyền luôn đạt 100% tốc độ cao nhất.
 * **Không yêu cầu quyền Root**: Chạy Wireproxy ở tầng người dùng (Userspace WireGuard), không cần cài driver card mạng ảo TUN/TAP, tương thích hoàn hảo trong Docker container trên Railway.
-* **Tự động mở rộng (Hot-Reload)**: Tự động phát hiện và nạp các server VPN mới mà không cần can thiệp thủ công.
 
 ---
 
@@ -63,36 +64,26 @@ HTTP Proxy thông thường trên Railway chỉ xử lý web qua cổng 80/443, 
    *(Tên domain và port `54321` sẽ do Railway ngẫu nhiên cấp cho service của bạn).*
 
 ### Bước 3: Cấu hình biến môi trường (Tùy chọn)
-Chuyển sang tab **Variables** trong Railway để điều chỉnh tham số theo ý muốn:
+Chuyển sang tab **Variables** trong Railway nếu bạn muốn tùy biến:
 
-| Tên biến | Giá trị mặc định / gợi ý | Ý nghĩa |
+| Tên biến | Giá trị mặc định | Ý nghĩa |
 | :--- | :--- | :--- |
-| `MAX_ACTIVE` | `7` | Số lượng server chạy song song (khuyên dùng 7 để dưới trần 10 kết nối của Proton) |
-| `SHIFT_INTERVAL_SEC` | `180` | Chu kỳ đổi ca trực (tính bằng giây, 180s = 3 phút xoay đổi 1 server mới vào ca) |
-| `REQUIRE_AUTH` | `false` (hoặc `true`) | Bật/tắt yêu cầu mật khẩu truy cập proxy |
-| `PROXY_USER` | `admin` | Tên đăng nhập (nếu bật `REQUIRE_AUTH`) |
-| `PROXY_PASS` | `MatKhauCuaBan123` | Mật khẩu truy cập (nếu bật `REQUIRE_AUTH`) |
+| `POOL_SIZE` | `5` | Số lượng server luôn được bật sẵn chờ nhận request (khuyên dùng 4–5 để an toàn dưới trần 10 kết nối) |
 
 ---
 
 ## 4. Cách sử dụng Proxy cho Bot
 
-### Trường hợp không đặt mật khẩu:
-Điền địa chỉ được cấp từ TCP Proxy vào bot:
+Cổng proxy **không yêu cầu mật khẩu**. Bạn chỉ cần copy địa chỉ TCP Proxy từ Railway và điền thẳng vào bot:
 ```text
 http://roundhouse.proxy.rlwy.net:54321
 ```
 
-### Trường hợp có đặt mật khẩu:
-```text
-http://admin:MatKhauCuaBan123@roundhouse.proxy.rlwy.net:54321
-```
-
-**Ví dụ dùng cURL để test từ máy ngoài:**
+**Kiểm tra nhanh bằng cURL từ máy ngoài:**
 ```bash
 curl -x http://roundhouse.proxy.rlwy.net:54321 https://ipinfo.io/json
 ```
-*(Mỗi lần chạy lại lệnh trên, bạn sẽ nhận được một địa chỉ IP thuộc quốc gia khác nhau: Việt Nam -> Singapore -> Nhật Bản -> Mỹ -> Đài Loan...)*
+*(Mỗi request gửi qua, bạn sẽ nhận được một địa chỉ IP thuộc quốc gia khác nhau. Sau khi request kết thúc, server đó tự tắt và một server mới được kích hoạt ngay lập tức).*
 
 ---
 

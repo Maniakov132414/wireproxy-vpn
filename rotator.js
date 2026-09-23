@@ -7,13 +7,10 @@ const { spawn } = require('child_process');
 const CONFIGS_DIR = path.join(__dirname, 'configs');
 
 // Configuration
-const MAX_ACTIVE_NODES = parseInt(process.env.MAX_ACTIVE || '7', 10);
-const SHIFT_INTERVAL_MS = parseInt(process.env.SHIFT_INTERVAL_SEC || '180', 10) * 1000; // 3 minutes default
+// Pool buffer size: number of warm, ready-to-serve WireGuard instances running at once
+const POOL_BUFFER_SIZE = parseInt(process.env.POOL_SIZE || '5', 10);
 const ROTATOR_PORT = parseInt(process.env.ROTATOR_PORT || process.env.PORT || '10800', 10);
 const BIND_ADDRESS = process.env.BIND_ADDRESS || '0.0.0.0';
-const PROXY_AUTH_USER = process.env.PROXY_USER || 'admin';
-const PROXY_AUTH_PASS = process.env.PROXY_PASS || 'proxy123';
-const REQUIRE_AUTH = process.env.REQUIRE_AUTH === 'true';
 
 // Auto-detect wireproxy binary
 function findWireproxyBin() {
@@ -58,8 +55,9 @@ function parseConfigs() {
         process: null,
         active: false,
         failures: 0,
-        startedAt: 0,
-        totalRequests: 0,
+        inFlight: 0,
+        servingCount: 0,
+        markedForRetire: false,
       });
     }
   }
@@ -76,9 +74,9 @@ function startNode(node) {
     });
 
     node.process = child;
-    node.startedAt = Date.now();
     node.failures = 0;
     node.active = true;
+    node.markedForRetire = false;
 
     child.on('error', (err) => {
       console.error(`[!] Failed to spawn ${node.name}: ${err.message}`);
@@ -91,7 +89,7 @@ function startNode(node) {
       node.active = false;
     });
 
-    console.log(`[+] Started ${node.name.padEnd(14)} (HTTP: ${node.port} | SOCKS5: ${node.socksPort || 'N/A'})`);
+    console.log(`[+] Started ${node.name.padEnd(14)} (Port: ${node.port}) -> Pre-warmed & Ready`);
   } catch (err) {
     console.error(`[!] Error launching ${node.name}: ${err.message}`);
   }
@@ -100,129 +98,85 @@ function startNode(node) {
 function stopNode(node) {
   if (!node.process) {
     node.active = false;
+    node.markedForRetire = false;
     return;
   }
   const proc = node.process;
   node.process = null;
   node.active = false;
+  node.markedForRetire = false;
   try {
     proc.kill('SIGTERM');
   } catch (e) {
     try { proc.kill('SIGKILL'); } catch (err) {}
   }
-  console.log(`[-] Stopped ${node.name.padEnd(14)} (Shift resting / Cooldown)`);
+  console.log(`[-] Retired ${node.name.padEnd(14)} (Finished request -> Shut down)`);
+}
+
+// Retire a node that just finished its request, and immediately warm up the next dormant node
+function retireAndRotateNode(usedNode) {
+  // If already retired or not running, skip
+  if (!usedNode.process) return;
+
+  usedNode.markedForRetire = true;
+
+  // If node still has other concurrent in-flight requests, wait until they finish
+  if (usedNode.inFlight > 0) return;
+
+  // Find next dormant node from the queue
+  const dormantNodes = ALL_NODES.filter(n => !n.process);
+  if (dormantNodes.length > 0) {
+    const nextNode = dormantNodes[0];
+    console.log(`\n[Auto-Rotate] ${usedNode.name} finished task. Launching fresh ${nextNode.name}...`);
+    startNode(nextNode);
+
+    // Stop the used node
+    stopNode(usedNode);
+
+    // Push the used node to the very end of the queue for next cycles
+    const idx = ALL_NODES.indexOf(usedNode);
+    if (idx > -1) {
+      ALL_NODES.splice(idx, 1);
+      ALL_NODES.push(usedNode);
+    }
+  } else {
+    // If no dormant nodes (all nodes are active), just reset
+    usedNode.markedForRetire = false;
+  }
 }
 
 function initPool() {
   ALL_NODES = parseConfigs();
   console.log(`==========================================================`);
-  console.log(` Wireproxy Smart Dynamic Shift Rotator Running!`);
+  console.log(` Wireproxy Ephemeral Rotating Proxy (One-Shot Per-Server)`);
   console.log(` Total Configs:    ${ALL_NODES.length} servers`);
-  console.log(` Max Active Nodes: ${MAX_ACTIVE_NODES} concurrent (safe under Proton 10-conn limit)`);
-  console.log(` Shift Interval:   ${SHIFT_INTERVAL_MS / 1000}s (auto-rotates dormant servers in/out)`);
-  console.log(` Binary Location:  ${WIREPROXY_BIN}`);
+  console.log(` Warm Buffer:      ${POOL_BUFFER_SIZE} servers pre-warmed & ready`);
+  console.log(` Authentication:   None (Public / Open for Bot)`);
+  console.log(` Rotation Rule:    After a server serves a request, it shuts down`);
+  console.log(`                   and the next fresh country server launches!`);
   console.log(`==========================================================\n`);
 
-  const initialCount = Math.min(MAX_ACTIVE_NODES, ALL_NODES.length);
+  const initialCount = Math.min(POOL_BUFFER_SIZE, ALL_NODES.length);
   for (let i = 0; i < initialCount; i++) {
     startNode(ALL_NODES[i]);
   }
 }
 
-function performShiftRotation() {
-  const activeNodes = ALL_NODES.filter(n => n.process && n.active);
-  const dormantNodes = ALL_NODES.filter(n => !n.process);
-
-  if (dormantNodes.length === 0 || activeNodes.length === 0) {
-    return;
-  }
-
-  // Oldest running node goes off-duty
-  activeNodes.sort((a, b) => a.startedAt - b.startedAt);
-  const retiringNode = activeNodes[0];
-  const incomingNode = dormantNodes[0];
-
-  console.log(`\n[Shift Rotation] Rotating: Bringing in ${incomingNode.name}, resting ${retiringNode.name}...`);
-
-  // Start new node first
-  startNode(incomingNode);
-
-  // Wait 1.5s for WireGuard handshake before stopping the retired node
-  setTimeout(() => {
-    stopNode(retiringNode);
-
-    // Push retiring node to the back of the queue
-    const index = ALL_NODES.indexOf(retiringNode);
-    if (index > -1) {
-      ALL_NODES.splice(index, 1);
-      ALL_NODES.push(retiringNode);
-    }
-
-    const currentActive = ALL_NODES.filter(n => n.process && n.active).length;
-    console.log(`[Shift Rotation Done] Active: ${currentActive}/${ALL_NODES.length} nodes online.\n`);
-  }, 1500);
-}
-
-function handleNodeFailure(failedNode) {
-  failedNode.failures = (failedNode.failures || 0) + 1;
-
-  if (failedNode.failures >= 2) {
-    const dormantNodes = ALL_NODES.filter(n => !n.process);
-    if (dormantNodes.length > 0) {
-      const replacement = dormantNodes[0];
-      console.warn(`[Auto-Healing] ${failedNode.name} had 2 errors. Immediate swap with ${replacement.name}...`);
-      startNode(replacement);
-      setTimeout(() => {
-        stopNode(failedNode);
-        const idx = ALL_NODES.indexOf(failedNode);
-        if (idx > -1) {
-          ALL_NODES.splice(idx, 1);
-          ALL_NODES.push(failedNode);
-        }
-      }, 1500);
-    } else {
-      console.warn(`[Auto-Healing] ${failedNode.name} cooling down for 30s.`);
-      failedNode.active = false;
-      setTimeout(() => {
-        failedNode.active = true;
-        failedNode.failures = 0;
-      }, 30000);
-    }
-  }
-}
-
+// Pick the next available healthy active proxy
 function getNextProxy() {
-  const healthy = ALL_NODES.filter(p => p.process && p.active);
+  const healthy = ALL_NODES.filter(p => p.process && p.active && !p.markedForRetire);
   if (healthy.length === 0) {
-    const anyRunning = ALL_NODES.find(p => p.process);
+    // Fallback to any running node
+    const anyRunning = ALL_NODES.find(p => p.process && p.active);
     return anyRunning || ALL_NODES[0] || { host: '127.0.0.1', port: 25345, name: 'Fallback' };
   }
   const proxy = healthy[currentIndex % healthy.length];
   currentIndex = (currentIndex + 1) % healthy.length;
-  proxy.totalRequests = (proxy.totalRequests || 0) + 1;
   return proxy;
 }
 
-function checkAuth(req) {
-  if (!REQUIRE_AUTH) return true;
-  const auth = req.headers['proxy-authorization'];
-  if (!auth) return false;
-  const [scheme, credentials] = auth.split(' ');
-  if (scheme !== 'Basic' || !credentials) return false;
-  const decoded = Buffer.from(credentials, 'base64').toString('ascii');
-  const [user, pass] = decoded.split(':');
-  return user === PROXY_AUTH_USER && pass === PROXY_AUTH_PASS;
-}
-
+// HTTP Proxy Handler (No Auth Required)
 const server = http.createServer((req, res) => {
-  if (!checkAuth(req)) {
-    res.writeHead(407, {
-      'Proxy-Authenticate': 'Basic realm="Rotating Wireproxy"',
-      'Content-Type': 'text/plain',
-    });
-    return res.end('Proxy Authentication Required');
-  }
-
   forwardHttp(req, res, 0);
 });
 
@@ -234,41 +188,50 @@ function forwardHttp(req, res, attempt) {
   }
 
   const target = getNextProxy();
+  target.inFlight = (target.inFlight || 0) + 1;
+  target.servingCount = (target.servingCount || 0) + 1;
+
   const options = {
     hostname: target.host,
     port: target.port,
     path: req.url,
     method: req.method,
     headers: req.headers,
-    timeout: 4000,
+    timeout: 5000,
   };
 
   const proxyReq = http.request(options, (proxyRes) => {
     target.failures = 0;
     res.writeHead(proxyRes.statusCode, proxyRes.headers);
     proxyRes.pipe(res);
+
+    res.on('finish', () => {
+      target.inFlight = Math.max(0, (target.inFlight || 1) - 1);
+      // Once request is done, retire this server and bring in a brand new one!
+      retireAndRotateNode(target);
+    });
   });
 
   proxyReq.on('timeout', () => {
     proxyReq.destroy();
-    handleNodeFailure(target);
+    target.inFlight = Math.max(0, (target.inFlight || 1) - 1);
+    target.failures = (target.failures || 0) + 1;
+    retireAndRotateNode(target);
     forwardHttp(req, res, attempt + 1);
   });
 
   proxyReq.on('error', () => {
-    handleNodeFailure(target);
+    target.inFlight = Math.max(0, (target.inFlight || 1) - 1);
+    target.failures = (target.failures || 0) + 1;
+    retireAndRotateNode(target);
     forwardHttp(req, res, attempt + 1);
   });
 
   req.pipe(proxyReq);
 }
 
+// HTTPS CONNECT Tunnel Handler (No Auth Required)
 server.on('connect', (req, clientSocket, head) => {
-  if (!checkAuth(req)) {
-    clientSocket.write('HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm="Rotating Wireproxy"\r\n\r\n');
-    return clientSocket.end();
-  }
-
   forwardConnect(req, clientSocket, head, 0);
 });
 
@@ -280,6 +243,9 @@ function forwardConnect(req, clientSocket, head, attempt) {
   }
 
   const target = getNextProxy();
+  target.inFlight = (target.inFlight || 0) + 1;
+  target.servingCount = (target.servingCount || 0) + 1;
+
   const upstreamSocket = net.connect(target.port, target.host, () => {
     upstreamSocket.write(`CONNECT ${req.url} HTTP/1.1\r\nHost: ${req.url}\r\n\r\n`);
 
@@ -291,37 +257,53 @@ function forwardConnect(req, clientSocket, head, attempt) {
         clientSocket.pipe(upstreamSocket);
         upstreamSocket.pipe(clientSocket);
       } else {
-        handleNodeFailure(target);
+        target.inFlight = Math.max(0, (target.inFlight || 1) - 1);
+        retireAndRotateNode(target);
         forwardConnect(req, clientSocket, head, attempt + 1);
       }
     });
   });
 
-  upstreamSocket.setTimeout(4000);
+  function onConnectDone() {
+    target.inFlight = Math.max(0, (target.inFlight || 1) - 1);
+    retireAndRotateNode(target);
+  }
+
+  clientSocket.once('close', onConnectDone);
+  upstreamSocket.once('close', onConnectDone);
+
+  upstreamSocket.setTimeout(5000);
   upstreamSocket.on('timeout', () => {
     upstreamSocket.destroy();
-    handleNodeFailure(target);
+    target.inFlight = Math.max(0, (target.inFlight || 1) - 1);
+    target.failures = (target.failures || 0) + 1;
+    retireAndRotateNode(target);
     forwardConnect(req, clientSocket, head, attempt + 1);
   });
 
   upstreamSocket.on('error', () => {
-    handleNodeFailure(target);
+    target.inFlight = Math.max(0, (target.inFlight || 1) - 1);
+    target.failures = (target.failures || 0) + 1;
+    retireAndRotateNode(target);
     forwardConnect(req, clientSocket, head, attempt + 1);
   });
-
-  clientSocket.on('error', () => upstreamSocket.end());
 }
+
+// Background idle sweeper: If system is idle for 60s, swap the oldest node anyway to keep IPs fresh
+setInterval(() => {
+  const activeNodes = ALL_NODES.filter(n => n.process && n.active && n.inFlight === 0);
+  const dormantNodes = ALL_NODES.filter(n => !n.process);
+  if (activeNodes.length > 0 && dormantNodes.length > 0) {
+    retireAndRotateNode(activeNodes[0]);
+  }
+}, 60000);
 
 server.listen(ROTATOR_PORT, BIND_ADDRESS, () => {
   initPool();
-  console.log(`==========================================================`);
-  console.log(` Master Rotating Proxy listening at http://${BIND_ADDRESS}:${ROTATOR_PORT}`);
-  console.log(` Authentication:  ${REQUIRE_AUTH ? `Enabled (User: ${PROXY_AUTH_USER})` : 'Disabled (Open)'}`);
-  console.log(`==========================================================\n`);
-
-  setInterval(performShiftRotation, SHIFT_INTERVAL_MS);
+  console.log(` Master Rotating Proxy listening at http://${BIND_ADDRESS}:${ROTATOR_PORT} (NO AUTH REQUIRED)\n`);
 });
 
+// Watch configs folder for new additions
 if (fs.existsSync(CONFIGS_DIR)) {
   fs.watch(CONFIGS_DIR, (eventType, filename) => {
     if (filename && filename.endsWith('.conf')) {
@@ -332,9 +314,9 @@ if (fs.existsSync(CONFIGS_DIR)) {
         const newlyAdded = newNodes.find(n => n.file === filename);
         if (newlyAdded) {
           ALL_NODES.push(newlyAdded);
-          console.log(`[Config Discovery] Registered ${newlyAdded.name} into dormant queue.`);
+          console.log(`[Config Discovery] Registered ${newlyAdded.name} into rotation queue.`);
           const activeCount = ALL_NODES.filter(n => n.process && n.active).length;
-          if (activeCount < MAX_ACTIVE_NODES) {
+          if (activeCount < POOL_BUFFER_SIZE) {
             startNode(newlyAdded);
           }
         }
@@ -343,6 +325,7 @@ if (fs.existsSync(CONFIGS_DIR)) {
   });
 }
 
+// Cleanup on exit
 function cleanup() {
   console.log('\n[!] Shutting down all Wireproxy instances...');
   for (const node of ALL_NODES) {
