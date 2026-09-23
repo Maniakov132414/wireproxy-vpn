@@ -1,4 +1,4 @@
-# Multi-Country Wireproxy + Dynamic Rotating Proxy Pool
+# Multi-Country Wireproxy + Dynamic Rotating Proxy Pool (Netflix & Asia Optimized)
 
 Hệ thống biến các cấu hình WireGuard VPN từ **ProtonVPN Plus** thành cụm **Proxy xoay đa quốc gia (Rotating Proxy Pool)** và các cổng SOCKS5 / HTTP riêng lẻ, phục vụ bot cào dữ liệu, bypass Cloudflare/Netflix, và chạy 24/7 trên Cloud (Railway).
 
@@ -6,9 +6,12 @@ Hệ thống biến các cấu hình WireGuard VPN từ **ProtonVPN Plus** thàn
 
 ## 1. Cơ chế hoạt động & Điểm nổi bật
 
-* **Cổng Master Proxy (`10800`)**: Lắng nghe mọi request HTTP/HTTPS và phân phối đến các cụm máy chủ sạch của ProtonVPN.
-* **Xong là Tắt & Bật mới ngay lập tức (Ephemeral One-Shot Rotation)**: Mỗi khi 1 máy chủ VPN xử lý xong 1 request/kết nối của bot, tiến trình đó sẽ **tự động tắt ngay lập tức**, đồng thời hệ thống tự động kích hoạt máy chủ tiếp theo từ hàng đợi. Đảm bảo IP luôn luôn thay đổi liên tục cho từng tác vụ.
-* **Hàng đợi đệm sẵn (Pre-warmed Buffer, mặc định 7 server)**: Luôn duy trì sẵn 7 máy chủ trực chiến luân phiên. Khi một máy chủ hoàn thành request và tắt đi, máy chủ kế tiếp từ hàng đợi sẽ lập tức khởi động bù vào, **hoàn toàn không có độ trễ kết nối**.
+* **Cổng Master Proxy Đa Giao Thức (`10800`)**: Lắng nghe trên cổng `10800` với cơ chế **Smart Protocol Sniffer**. Tự động phân tích byte đầu tiên để hỗ trợ cả **HTTP/HTTPS CONNECT** và **SOCKS5** trên cùng một cổng duy nhất.
+* **Tối ưu hóa độ trễ cho Netflix & Châu Á**: Tập trung vào các cụm máy chủ có độ trễ thấp và định tuyến CDN tốt nhất: **Việt Nam (11 node)**, **Singapore (5 node)**, **Nhật Bản (3 node)** cùng các hub lớn như **Hồng Kông**, **Đài Loan**, **Hàn Quốc**, **Mỹ** và **Anh**.
+* **Kiểm tra sống tự động (Live Handshake Probe)**: Mỗi khi một node khởi động, rotator gửi gói tin kiểm tra kết nối qua tunnel tới `1.1.1.1` trong 3.5 giây. Nếu node bị Proton chặn handshake, hệ thống tự động loại bỏ và chuyển sang node sống tiếp theo, **loại trừ 100% rủi ro bị treo hoặc lỗi timeout cho bot**.
+* **Chuyển vùng thần tốc (Fast Failover 6s)**: Nếu kết nối gặp sự cố hoặc nghẽn mạng quá 6 giây, rotator sẽ tự động hủy socket và thử lại ngay lập tức trên node đệm tiếp theo.
+* **Hàng đợi đệm sẵn (Pre-warmed Buffer, 6 server)**: Luôn duy trì sẵn 6 máy chủ trực chiến luân phiên. Giới hạn 6 node giúp chừa lại 4 slot trống dưới trần 10 thiết bị của ProtonVPN cho PC và điện thoại cá nhân.
+* **Tự động ngủ khi không hoạt động (Auto-Sleep 90s)**: Sau 90 giây không có request từ bot, toàn bộ tiến trình Wireproxy sẽ tự động tắt để giải phóng 100% slot thiết bị của Proton. Khi có request mới đến, hệ thống sẽ tự động thức dậy trong 1-2 giây.
 * **Không cần Mật khẩu (No Auth)**: Cổng proxy mở trực tiếp, bot kết nối vào dùng ngay mà không cần cấu hình User/Pass rườm rà.
 * **Không yêu cầu quyền Root**: Chạy Wireproxy ở tầng người dùng (Userspace WireGuard), không cần cài driver card mạng ảo TUN/TAP, tương thích hoàn hảo trong Docker container trên Railway.
 
@@ -16,7 +19,7 @@ Hệ thống biến các cấu hình WireGuard VPN từ **ProtonVPN Plus** thàn
 
 ## 2. Bảng phân bổ Node & Địa chỉ IP
 
-Hệ thống hiện tại gồm **42 cụm máy chủ** trên **28 quốc gia** (Đặc biệt có **11 máy chủ Việt Nam** và **5 máy chủ Singapore**):
+Hệ thống hiện tại gồm **24 cụm máy chủ** tập trung cao độ vào Việt Nam, Singapore, Nhật Bản và các khu vực truyền phát Netflix tốt nhất:
 
 | STT | Node | Quốc gia & Vị trí | Cổng HTTP | Cổng SOCKS5 | Nhà mạng / ASN | Trạng thái |
 | :-: | :--- | :--- | :-: | :-: | :--- | :-: |
@@ -31,117 +34,73 @@ Hệ thống hiện tại gồm **42 cụm máy chủ** trên **28 quốc gia** 
 | 9 | `VN10` | 🇻🇳 Hà Nội (VN#10) | `25421` | `25420` | M247 Europe SRL | Hoạt động |
 | 10 | `VN11` | 🇻🇳 Hà Nội (VN#11) | `25423` | `25422` | M247 Europe SRL | Hoạt động |
 | 11 | `VN12` | 🇻🇳 Hà Nội (VN#12) | `25425` | `25424` | M247 Europe SRL | Hoạt động |
-| 12 | `SG` | 🇸🇬 Singapore (SG#196) | `25347` | `25346` | Proton AG | Hoạt động |
+| 12 | `SG` | 🇸🇬 Singapore (SG#192) | `25347` | `25346` | Proton AG | Hoạt động |
 | 13 | `SG120` | 🇸🇬 Singapore (SG#120) | `25427` | `25426` | Proton AG | Hoạt động |
 | 14 | `SG171` | 🇸🇬 Singapore (SG#171) | `25371` | `25370` | Proton AG | Hoạt động |
 | 15 | `SG175` | 🇸🇬 Singapore (SG#175) | `25363` | `25362` | Proton AG | Hoạt động |
 | 16 | `SG228` | 🇸🇬 Singapore (SG#228) | `25369` | `25368` | Proton AG | Hoạt động |
 | 17 | `JP` | 🇯🇵 Tokyo (JP#188) | `25349` | `25348` | xTom GmbH | Hoạt động |
-| 18 | `HK` | 🇭🇰 Hồng Kông (HK#35) | `25353` | `25352` | M247 Europe SRL | Hoạt động |
-| 19 | `KR` | 🇰🇷 Seoul (KR#24) | `25355` | `25354` | M247 Europe SRL | Hoạt động |
-| 20 | `TW` | 🇹🇼 Cao Hùng (TW#21) | `25357` | `25356` | M247 Europe SRL | Hoạt động |
-| 21 | `TH` | 🇹🇭 Thái Lan (TH#3) | `25383` | `25382` | M247 Europe SRL | Hoạt động |
-| 22 | `MY` | 🇲🇾 Malaysia (MY#11) | `25385` | `25384` | M247 Europe SRL | Hoạt động |
-| 23 | `PH` | 🇵🇭 Philippines (PH#1) | `25405` | `25404` | Datacamp Limited | Hoạt động |
-| 24 | `ID` | 🇮🇩 Indonesia (ID#14) | `25407` | `25406` | Datacamp Limited | Hoạt động |
-| 25 | `IN` | 🇮🇳 Ấn Độ (IN#14) | `25387` | `25386` | Datacamp Limited | Hoạt động |
-| 26 | `AU` | 🇦🇺 Úc (AU#109) | `25381` | `25380` | HostRoyale Tech | Hoạt động |
-| 27 | `NZ` | 🇳🇿 New Zealand (NZ#20) | `25411` | `25410` | Datacamp Limited | Hoạt động |
-| 28 | `US` | 🇺🇸 Hoa Kỳ (US-AZ#84) | `25351` | `25350` | M247 Europe SRL | Hoạt động |
-| 29 | `CA` | 🇨🇦 Canada (CA#93) | `25379` | `25378` | M247 Europe SRL | Hoạt động |
-| 30 | `BR` | 🇧🇷 Brazil (BR#20) | `25409` | `25408` | Datacamp Limited | Hoạt động |
-| 31 | `UK` | 🇬🇧 London (UK#186) | `25359` | `25358` | Datacamp Limited | Hoạt động |
-| 32 | `DE` | 🇩🇪 Đức (DE#187) | `25373` | `25372` | Datacamp Limited | Hoạt động |
-| 33 | `NL` | 🇳🇱 Hà Lan (NL#343) | `25375` | `25374` | Datacamp Limited | Hoạt động |
-| 34 | `FR` | 🇫🇷 Pháp (FR#167) | `25377` | `25376` | Datacamp Limited | Hoạt động |
-| 35 | `CH` | 🇨🇭 Thụy Sĩ (CH#289) | `25389` | `25388` | Proton AG | Hoạt động |
-| 36 | `SE` | 🇸🇪 Thụy Điển (SE#76) | `25391` | `25390` | Datacamp Limited | Hoạt động |
-| 37 | `IT` | 🇮🇹 Ý (IT#19) | `25393` | `25392` | Datacamp Limited | Hoạt động |
-| 38 | `ES` | 🇪🇸 Tây Ban Nha (ES#71) | `25395` | `25394` | Datacamp Limited | Hoạt động |
-| 39 | `BE` | 🇧🇪 Bỉ (BE#43) | `25397` | `25396` | Datacamp Limited | Hoạt động |
-| 40 | `DK` | 🇩🇰 Đan Mạch (DK#52) | `25399` | `25398` | Datacamp Limited | Hoạt động |
-| 41 | `NO` | 🇳🇴 Na Uy (NO#21) | `25401` | `25400` | Datacamp Limited | Hoạt động |
-| 42 | `FI` | 🇫🇮 Phần Lan (FI#1) | `25403` | `25402` | Datacamp Limited | Hoạt động |
+| 18 | `JP201` | 🇯🇵 Osaka (JP#201) | `25431` | `25430` | Datacamp Limited | Hoạt động |
+| 19 | `JP202` | 🇯🇵 Osaka (JP#202) | `25433` | `25432` | Datacamp Limited | Hoạt động |
+| 20 | `HK` | 🇭🇰 Hồng Kông (HK#35) | `25353` | `25352` | M247 Europe SRL | Hoạt động |
+| 21 | `TW` | 🇹🇼 Cao Hùng (TW#21) | `25357` | `25356` | M247 Europe SRL | Hoạt động |
+| 22 | `KR` | 🇰🇷 Seoul (KR#24) | `25355` | `25354` | M247 Europe SRL | Hoạt động |
+| 23 | `US` | 🇺🇸 Hoa Kỳ (US-AZ#84) | `25351` | `25350` | M247 Europe SRL | Hoạt động |
+| 24 | `UK` | 🇬🇧 London (UK#186) | `25359` | `25358` | Datacamp Limited | Hoạt động |
 
 ---
 
-## 3. Hướng dẫn cài đặt và cấu hình chi tiết trên Railway
+## 3. Triển khai trên Railway
 
-### Bước 1: Tạo dự án từ GitHub
-1. Đăng nhập vào [Railway](https://railway.com).
-2. Nhấn nút **New Project** (hoặc góc trên bên phải bấm `+ New`).
-3. Chọn **Deploy from GitHub repo**.
-4. Chọn repository **`wireproxy-vpn`** (đặt ở chế độ Private).
-5. Railway sẽ tự động tiến hành build Dockerfile (thời gian build chỉ mất khoảng 15–25 giây vì sử dụng binary biên dịch sẵn).
+### Bước 1: Deploy lên Railway
+Dự án đã liên kết trực tiếp với GitHub repo `wireproxy-vpn` và deploy tự động lên dịch vụ Railway.
 
-### Bước 2: Cấu hình TCP Proxy để lấy Public IP/Port
-HTTP Proxy thông thường trên Railway chỉ xử lý web qua cổng 80/443, do đó để bot bên ngoài kết nối được cổng proxy `10800`, **bắt buộc phải tạo TCP Proxy**:
-
-1. Bấm vào Service vừa deploy trên giao diện Railway.
-2. Chuyển sang tab **Settings**.
-3. Kéo xuống phần **Networking**:
-   - Ở mục **Public Networking**, bấm vào nút **Add TCP Proxy**.
-4. Trong ô cấu hình mở ra:
-   - **Port**: Nhập chính xác số `10800` (đây là cổng của `rotator.js`).
-   - Nhấn **Save** hoặc xác nhận.
-5. Ngay sau đó, Railway sẽ cấp một địa chỉ Public dạng:
+### Bước 2: Cấu hình TCP Proxy
+1. Trong Railway Settings của service `wireproxy-vpn`, vào phần **Networking**.
+2. Thêm **TCP Proxy** trỏ tới cổng nội bộ `10800`.
+3. Địa chỉ truy cập public sẽ có định dạng:
    ```text
-   roundhouse.proxy.rlwy.net:54321
+   altaria.proxy.rlwy.net:13082
    ```
-   *(Tên domain và port `54321` sẽ do Railway ngẫu nhiên cấp cho service của bạn).*
 
-### Bước 3: Cấu hình biến môi trường (Tùy chọn)
-Chuyển sang tab **Variables** trong Railway nếu bạn muốn tùy biến:
+### Bước 3: Biến môi trường
+Các biến môi trường có thể tùy chỉnh trong tab **Variables**:
 
-| Tên biến | Giá trị mặc định | Ý nghĩa |
-| :--- | :--- | :--- |
-| `POOL_SIZE` | `5` | Số lượng server luôn được bật sẵn chờ nhận request (khuyên dùng 4–5 để an toàn dưới trần 10 kết nối) |
+| Tên biến | Mặc định | Ý nghĩa |
+| :--- | :---: | :--- |
+| `POOL_SIZE` | `6` | Số lượng server luôn được giữ ấm (khuyên dùng 6 để an toàn dưới trần 10 slot của Proton) |
+| `MAX_REQUESTS_PER_NODE` | `60` | Số lượt request tối đa trước khi xoay node |
+| `IDLE_TIMEOUT_MS` | `90000` | Thời gian không có request (90s) để đưa hệ thống vào chế độ ngủ tiết kiệm slot |
 
 ---
 
-## 4. Cách sử dụng Proxy cho Bot
+## 4. Cách sử dụng Proxy cho Bot / Checker
 
-Cổng proxy **không yêu cầu mật khẩu**. Bạn chỉ cần copy địa chỉ TCP Proxy từ Railway và điền thẳng vào bot:
+### Cấu hình trong `proxy.txt`:
+Do cổng Master hỗ trợ cả HTTP và SOCKS5, bạn có thể điền:
 ```text
-http://roundhouse.proxy.rlwy.net:54321
+http://altaria.proxy.rlwy.net:13082
+```
+hoặc:
+```text
+socks5://altaria.proxy.rlwy.net:13082
 ```
 
-**Kiểm tra nhanh bằng cURL từ máy ngoài:**
+### Kiểm tra bằng cURL:
 ```bash
-curl -x http://roundhouse.proxy.rlwy.net:54321 https://ipinfo.io/json
+# Kiểm tra HTTP
+curl -x http://altaria.proxy.rlwy.net:13082 http://api.ipify.org
+
+# Kiểm tra kết nối tới Netflix
+curl -I -x http://altaria.proxy.rlwy.net:13082 https://www.netflix.com
 ```
-*(Mỗi request gửi qua, bạn sẽ nhận được một địa chỉ IP thuộc quốc gia khác nhau. Sau khi request kết thúc, server đó tự tắt và một server mới được kích hoạt ngay lập tức).*
+
+### Khuyến nghị số luồng (Threads):
+* Với Netflix Cookie Checker, khuyến nghị chạy từ **15 đến 25 threads** để đảm bảo tốc độ phản hồi ổn định (khoảng 2.0s - 2.5s / cookie) mà không bị Netflix WAF chặn tạm thời (HTTP 403/429).
 
 ---
 
-## 5. Thêm máy chủ WireGuard mới (Tự động 100%)
-
-Khi bạn muốn bổ sung thêm quốc gia hoặc máy chủ mới:
-
-1. Tải file WireGuard `.conf` từ ProtonVPN về máy tính.
-2. Chạy lệnh PowerShell:
-   ```powershell
-   .\add-server.ps1 -FilePath "C:\duong-dan\wg-moi.conf" -Name "ten-quoc-gia" -Push
-   ```
-3. **Cơ chế tự động:**
-   * Script tự cấp phát dải port SOCKS5 và HTTP tiếp theo.
-   * Tạo file config vào thư mục `configs/`.
-   * Tự động `git commit` và `git push` lên GitHub.
-   * **Railway tự động nhận code mới -> Rebuild lại sau 20s mà địa chỉ TCP Proxy cấp cho bot VẪN GIỮ NGUYÊN.**
-
----
-
-## 6. Kiểm tra toàn bộ danh sách IP (IP Tester)
-
-Trong thư mục dự án có sẵn script kiểm tra đồng thời tất cả các node:
-```bash
-node test-all-ips.js
-```
-Script sẽ gửi request song song qua tất cả 14 cổng proxy, xuất bảng đo đạc gồm IP thực tế, quốc gia, độ trễ và nhà mạng.
-
----
-
-## 7. Quản lý cục bộ trên Windows
+## 5. Quản lý cục bộ trên Windows (Tùy chọn)
 
 * **Khởi chạy toàn bộ hệ thống trên máy cá nhân**:
   ```powershell
@@ -151,4 +110,5 @@ Script sẽ gửi request song song qua tất cả 14 cổng proxy, xuất bản
   ```powershell
   .\stop-pool.ps1
   ```
+
 
