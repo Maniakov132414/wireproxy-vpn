@@ -7,8 +7,9 @@ const { spawn } = require('child_process');
 const CONFIGS_DIR = path.join(__dirname, 'configs');
 
 // Configuration
-// Pool buffer size: number of warm WireGuard instances running at once (default 6, reserving 4 slots under Proton's 10 limit for personal devices & safety margin)
-const POOL_BUFFER_SIZE = parseInt(process.env.POOL_SIZE || '6', 10);
+// Pool buffer size: number of warm WireGuard instances running at once (default 7, reserving 3 slots under Proton's 10 limit for personal devices & safety margin)
+const POOL_BUFFER_SIZE = parseInt(process.env.POOL_SIZE || '7', 10);
+const STICKY_REQUESTS_PER_NODE = parseInt(process.env.STICKY_REQUESTS || '5', 10);
 const MAX_REQUESTS_PER_NODE = parseInt(process.env.MAX_REQUESTS_PER_NODE || '60', 10);
 const IDLE_TIMEOUT_MS = parseInt(process.env.IDLE_TIMEOUT_MS || '90000', 10);
 const ROTATOR_PORT = parseInt(process.env.ROTATOR_PORT || process.env.PORT || '10800', 10);
@@ -44,8 +45,8 @@ function parseConfigs() {
   }
 
   // Interleave preferred low-latency regions & hubs across the pool so the warm nodes
-  // ALWAYS have distinct public IP addresses!
-  const preferredOrder = ['jp', 'vn', 'sg', 'hk', 'tw', 'kr', 'us', 'uk'];
+  // ALWAYS have distinct public IP addresses close to Railway Southeast Asia (Singapore)!
+  const preferredOrder = ['sg', 'vn', 'hk', 'tw', 'jp', 'kr'];
   const files = [];
   const maxLen = Math.max(...Object.values(groups).map(g => g.length));
 
@@ -242,9 +243,14 @@ function handleRequestDone(target, isError = false) {
   target.inFlight = Math.max(0, (target.inFlight || 1) - 1);
   if (isError) {
     target.failures = (target.failures || 0) + 1;
-    // Only retire if repeated failures occur and no active requests remain
-    if (target.failures >= 5 && target.inFlight === 0) {
-      console.warn(`[!] Node ${target.name} hit 5 consecutive errors, rotating...`);
+    // If the current sticky node failed, reset stickiness so retries jump to another node
+    if (currentStickyNode === target) {
+      currentStickyNode = null;
+      currentStickyCount = 0;
+    }
+    // Only retire if repeated upstream failures occur and no active requests remain
+    if (target.failures >= 8 && target.inFlight === 0) {
+      console.warn(`[!] Node ${target.name} hit 8 consecutive upstream errors, rotating...`);
       retireAndRotateNode(target);
     }
   } else {
@@ -261,6 +267,8 @@ function handleRequestDone(target, isError = false) {
 }
 
 let lastActivityTime = Date.now();
+let currentStickyNode = null;
+let currentStickyCount = 0;
 
 // Pre-warm background nodes up to POOL_BUFFER_SIZE if below target
 function replenishPool() {
@@ -282,19 +290,34 @@ function replenishPool() {
 async function getOrWarmProxy() {
   lastActivityTime = Date.now();
   const healthy = ALL_NODES.filter(p => p.process && p.active && !p.markedForRetire);
-  if (healthy.length > 0) {
-    // 100% Random selection among active healthy nodes
-    const randomIndex = Math.floor(Math.random() * healthy.length);
-    const proxy = healthy[randomIndex];
+
+  // Sticky 5 requests per node: keeps cookie check sessions stable and prevents abrupt IP jumping!
+  if (currentStickyNode && currentStickyNode.process && currentStickyNode.active && !currentStickyNode.markedForRetire && currentStickyCount < STICKY_REQUESTS_PER_NODE) {
+    currentStickyCount++;
     replenishPool();
-    return proxy;
+    return currentStickyNode;
+  }
+
+  // After 5 requests, pick a new random node from the healthy warm pool
+  if (healthy.length > 0) {
+    let candidates = healthy.filter(n => n !== currentStickyNode);
+    if (candidates.length === 0) candidates = healthy;
+    const randomIndex = Math.floor(Math.random() * candidates.length);
+    currentStickyNode = candidates[randomIndex];
+    currentStickyCount = 1;
+    replenishPool();
+    return currentStickyNode;
   }
 
   // If all were sleeping or none ready yet:
   const starting = ALL_NODES.find(n => n.starting);
   if (starting) {
     await waitForPort(starting.port, starting.host, 3000);
-    if (starting.active) return starting;
+    if (starting.active) {
+      currentStickyNode = starting;
+      currentStickyCount = 1;
+      return starting;
+    }
   }
 
   const dormant = ALL_NODES.filter(n => !n.process && !n.starting);
@@ -305,6 +328,8 @@ async function getOrWarmProxy() {
     console.log(`[On-Demand Wakeup] Starting ${candidate.name}...`);
     await startNode(candidate);
     replenishPool();
+    currentStickyNode = candidate;
+    currentStickyCount = 1;
     return candidate;
   }
   return ALL_NODES[0];
@@ -389,7 +414,7 @@ async function forwardHttp(req, res, attempt) {
   });
 
   req.on('error', () => {
-    done(true);
+    done(false); // Client aborted, not a node failure
   });
 
   req.pipe(proxyReq);
@@ -425,7 +450,7 @@ async function forwardConnect(req, clientSocket, head, attempt) {
         } catch (e) {}
       }
     }
-  }, 6000);
+  }, 12000);
 
   const upstreamSocket = net.connect(target.port, target.host, () => {
     upstreamSocket.write(`CONNECT ${req.url} HTTP/1.1\r\nHost: ${req.url}\r\n\r\n`);
@@ -467,7 +492,7 @@ async function forwardConnect(req, clientSocket, head, attempt) {
 
   clientSocket.on('error', () => {
     upstreamSocket.destroy();
-    done(true);
+    done(false);
   });
 }
 
@@ -512,11 +537,11 @@ async function handleSocks5(clientSocket, initialChunk) {
 
   clientSocket.on('error', () => {
     upstreamSocket.destroy();
-    onSocksDone(true);
+    onSocksDone(false);
   });
 }
 
-// Periodic graceful rotation: Every 20s, pick a random active node with 0 inFlight and rotate it to a random dormant node
+// Periodic graceful rotation: Every 30s, pick a random active node with 0 inFlight and rotate it to a random dormant node
 setInterval(() => {
   const activeNodes = ALL_NODES.filter(n => n.process && n.active && !n.markedForRetire && n.inFlight === 0);
   const dormantNodes = ALL_NODES.filter(n => !n.process && !n.starting);
@@ -524,7 +549,7 @@ setInterval(() => {
     const randomActive = activeNodes[Math.floor(Math.random() * activeNodes.length)];
     retireAndRotateNode(randomActive);
   }
-}, 20000);
+}, 30000);
 
 // Background idle sweeper: If system is idle for IDLE_TIMEOUT_MS, put WireGuard instances to sleep
 // to free the Proton device slot 100% so you can use Proton on phone/PC without collision!
