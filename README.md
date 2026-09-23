@@ -10,7 +10,6 @@ Hệ thống biến các cấu hình WireGuard VPN từ **ProtonVPN Plus** thàn
 * **Xong là Tắt & Bật mới ngay lập tức (Ephemeral One-Shot Rotation)**: Mỗi khi 1 máy chủ VPN xử lý xong 1 request/kết nối của bot, tiến trình đó sẽ **tự động tắt ngay lập tức**, đồng thời hệ thống tự động kích hoạt máy chủ tiếp theo từ hàng đợi. Đảm bảo IP luôn luôn thay đổi liên tục cho từng tác vụ.
 * **Hàng đợi đệm sẵn (Pre-warmed Buffer, mặc định 7 server)**: Luôn duy trì sẵn 7 máy chủ trực chiến luân phiên. Khi một máy chủ hoàn thành request và tắt đi, máy chủ kế tiếp từ hàng đợi sẽ lập tức khởi động bù vào, **hoàn toàn không có độ trễ kết nối**.
 * **Không cần Mật khẩu (No Auth)**: Cổng proxy mở trực tiếp, bot kết nối vào dùng ngay mà không cần cấu hình User/Pass rườm rà.
-* **Tối ưu thiết bị (Dành riêng 2 slot cho PC & Điện thoại)**: Cụm proxy giới hạn tối đa **7 kết nối đồng thời** (`POOL_SIZE=7`), chừa cố định 2 slot cho PC và Điện thoại cá nhân của bạn hoạt động song song + 1 slot đệm an toàn dưới trần 10 thiết bị của Proton. Kèm tính năng **Tự động ngủ (Auto-Sleep)** tắt sạch về 0 kết nối khi không có request trong 90 giây.
 * **Không yêu cầu quyền Root**: Chạy Wireproxy ở tầng người dùng (Userspace WireGuard), không cần cài driver card mạng ảo TUN/TAP, tương thích hoàn hảo trong Docker container trên Railway.
 
 ---
