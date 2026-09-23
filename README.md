@@ -7,7 +7,8 @@ Hệ thống biến các cấu hình WireGuard VPN từ **ProtonVPN Plus** thàn
 ## 1. Cơ chế hoạt động & Điểm nổi bật
 
 * **Cổng Master Proxy Đa Giao Thức (`10800`)**: Lắng nghe trên cổng `10800` với cơ chế **Smart Protocol Sniffer**. Tự động phân tích byte đầu tiên để hỗ trợ cả **HTTP/HTTPS CONNECT** và **SOCKS5** trên cùng một cổng duy nhất.
-* **Tối ưu hóa độ trễ cho Netflix & Châu Á**: Tập trung vào các cụm máy chủ có độ trễ thấp và định tuyến CDN tốt nhất: **Việt Nam (11 node)**, **Singapore (5 node)**, **Nhật Bản (3 node)** cùng các hub lớn như **Hồng Kông**, **Đài Loan**, **Hàn Quốc**, **Mỹ** và **Anh**.
+* **Xoay ngẫu nhiên 100% (100% Random Rotation)**: Mỗi request đến cổng Master `10800` được định tuyến hoàn toàn ngẫu nhiên đến một node trong nhóm node đang trực chiến, đồng thời các node dự phòng được nạp ngẫu nhiên (Fisher-Yates shuffle) và luân chuyển ngẫu nhiên liên tục.
+* **Tối ưu hóa độ trễ cho Netflix & Châu Á**: Tập trung vào 22 máy chủ mới tinh với độ trễ thấp và định tuyến CDN tốt nhất: **Việt Nam (8 node)**, **Singapore (5 node)**, **Nhật Bản (5 node)**, **Hồng Kông (2 node)**, **Đài Loan (1 node)**, và **Hàn Quốc (1 node)**.
 * **Kiểm tra sống tự động (Live Handshake Probe)**: Mỗi khi một node khởi động, rotator gửi gói tin kiểm tra kết nối qua tunnel tới `1.1.1.1` trong 3.5 giây. Nếu node bị Proton chặn handshake, hệ thống tự động loại bỏ và chuyển sang node sống tiếp theo, **loại trừ 100% rủi ro bị treo hoặc lỗi timeout cho bot**.
 * **Chuyển vùng thần tốc (Fast Failover 6s)**: Nếu kết nối gặp sự cố hoặc nghẽn mạng quá 6 giây, rotator sẽ tự động hủy socket và thử lại ngay lập tức trên node đệm tiếp theo.
 * **Hàng đợi đệm sẵn (Pre-warmed Buffer, 6 server)**: Luôn duy trì sẵn 6 máy chủ trực chiến luân phiên. Giới hạn 6 node giúp chừa lại 4 slot trống dưới trần 10 thiết bị của ProtonVPN cho PC và điện thoại cá nhân.
@@ -19,21 +20,32 @@ Hệ thống biến các cấu hình WireGuard VPN từ **ProtonVPN Plus** thàn
 
 ## 2. Bảng phân bổ Node & Địa chỉ IP
 
-Hệ thống hiện tại gồm **11 cụm máy chủ verified live 100%** tập trung vào Nhật Bản và Việt Nam:
+Hệ thống hiện tại gồm **22 cụm máy chủ Proton WireGuard mới tinh** phân bổ khắp khu vực Châu Á:
 
-| STT | Node | Quốc gia & Vị trí | Cổng HTTP | Cổng SOCKS5 | Nhà mạng / ASN | Trạng thái |
-| :-: | :--- | :--- | :-: | :-: | :--- | :-: |
-| 1 | `JP201` | 🇯🇵 Osaka (JP#201) | `25431` | `25430` | Datacamp Limited | Verified Live |
-| 2 | `JP202` | 🇯🇵 Osaka (JP#202) | `25433` | `25432` | Datacamp Limited | Verified Live |
-| 3 | `VN1` | 🇻🇳 Hà Nội (VN#1) | `25413` | `25412` | M247 Europe SRL | Verified Live |
-| 4 | `VN2` | 🇻🇳 Hà Nội (VN#2) | `25367` | `25366` | M247 Europe SRL | Verified Live |
-| 5 | `VN3` | 🇻🇳 Hà Nội (VN#3) | `25415` | `25414` | M247 Europe SRL | Verified Live |
-| 6 | `VN4` | 🇻🇳 Hà Nội (VN#4) | `25361` | `25360` | M247 Europe SRL | Verified Live |
-| 7 | `VN6` | 🇻🇳 Hà Nội (VN#6) | `25417` | `25416` | M247 Europe SRL | Verified Live |
-| 8 | `VN7` | 🇻🇳 Hà Nội (VN#7) | `25419` | `25418` | M247 Europe SRL | Verified Live |
-| 9 | `VN9` | 🇻🇳 Hà Nội (VN#9) | `25365` | `25364` | M247 Europe SRL | Verified Live |
-| 10 | `VN11` | 🇻🇳 Hà Nội (VN#11) | `25423` | `25422` | M247 Europe SRL | Verified Live |
-| 11 | `VN12` | 🇻🇳 Hà Nội (VN#12) | `25425` | `25424` | M247 Europe SRL | Verified Live |
+| STT | Node | Quốc gia & Vị trí | Cổng HTTP | Cổng SOCKS5 | Trạng thái |
+| :-: | :--- | :--- | :-: | :-: | :-: |
+| 1 | `VN1` | 🇻🇳 Hà Nội (VN#1) | `25401` | `25400` | Verified Live |
+| 2 | `VN2` | 🇻🇳 Hà Nội (VN#2) | `25403` | `25402` | Verified Live |
+| 3 | `VN3` | 🇻🇳 Hà Nội (VN#3) | `25405` | `25404` | Verified Live |
+| 4 | `VN4` | 🇻🇳 Hà Nội (VN#4) | `25407` | `25406` | Verified Live |
+| 5 | `VN5` | 🇻🇳 Hà Nội (VN#5) | `25409` | `25408` | Verified Live |
+| 6 | `VN6` | 🇻🇳 Hà Nội (VN#6) | `25411` | `25410` | Verified Live |
+| 7 | `VN7` | 🇻🇳 Hà Nội (VN#7) | `25413` | `25412` | Verified Live |
+| 8 | `VN8` | 🇻🇳 Hà Nội (VN#8) | `25415` | `25414` | Verified Live |
+| 9 | `SG120` | 🇸🇬 Singapore (SG#120) | `25417` | `25416` | Verified Live |
+| 10 | `SG124` | 🇸🇬 Singapore (SG#124) | `25419` | `25418` | Verified Live |
+| 11 | `SG171` | 🇸🇬 Singapore (SG#171) | `25421` | `25420` | Verified Live |
+| 12 | `SG175` | 🇸🇬 Singapore (SG#175) | `25423` | `25422` | Verified Live |
+| 13 | `SG192` | 🇸🇬 Singapore (SG#192) | `25425` | `25424` | Verified Live |
+| 14 | `JP188` | 🇯🇵 Tokyo (JP#188) | `25427` | `25426` | Verified Live |
+| 15 | `JP201` | 🇯🇵 Osaka (JP#201) | `25429` | `25428` | Verified Live |
+| 16 | `JP202` | 🇯🇵 Osaka (JP#202) | `25431` | `25430` | Verified Live |
+| 17 | `JP203` | 🇯🇵 Osaka (JP#203) | `25433` | `25432` | Verified Live |
+| 18 | `JP206` | 🇯🇵 Osaka (JP#206) | `25435` | `25434` | Verified Live |
+| 19 | `HK29` | 🇭🇰 Hồng Kông (HK#29) | `25437` | `25436` | Verified Live |
+| 20 | `HK35` | 🇭🇰 Hồng Kông (HK#35) | `25439` | `25438` | Verified Live |
+| 21 | `TW13` | 🇹🇼 Đài Bắc (TW#13) | `25441` | `25440` | Verified Live |
+| 22 | `KR20` | 🇰🇷 Seoul (KR#20) | `25443` | `25442` | Verified Live |
 
 ---
 
