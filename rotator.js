@@ -45,7 +45,7 @@ function parseConfigs() {
 
   // Interleave preferred low-latency regions & hubs across the pool so the warm nodes
   // ALWAYS have distinct public IP addresses!
-  const preferredOrder = ['vn', 'sg', 'jp', 'hk', 'tw', 'kr', 'us', 'uk'];
+  const preferredOrder = ['jp', 'vn', 'sg', 'hk', 'tw', 'kr', 'us', 'uk'];
   const files = [];
   const maxLen = Math.max(...Object.values(groups).map(g => g.length));
 

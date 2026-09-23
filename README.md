@@ -19,34 +19,21 @@ Hệ thống biến các cấu hình WireGuard VPN từ **ProtonVPN Plus** thàn
 
 ## 2. Bảng phân bổ Node & Địa chỉ IP
 
-Hệ thống hiện tại gồm **24 cụm máy chủ** tập trung cao độ vào Việt Nam, Singapore, Nhật Bản và các khu vực truyền phát Netflix tốt nhất:
+Hệ thống hiện tại gồm **11 cụm máy chủ verified live 100%** tập trung vào Nhật Bản và Việt Nam:
 
 | STT | Node | Quốc gia & Vị trí | Cổng HTTP | Cổng SOCKS5 | Nhà mạng / ASN | Trạng thái |
 | :-: | :--- | :--- | :-: | :-: | :--- | :-: |
-| 1 | `VN` | 🇻🇳 Hà Nội (VN#8) | `25345` | `25344` | M247 Europe SRL | Hoạt động |
-| 2 | `VN1` | 🇻🇳 Hà Nội (VN#1) | `25413` | `25412` | M247 Europe SRL | Hoạt động |
-| 3 | `VN2` | 🇻🇳 Hà Nội (VN#2) | `25367` | `25366` | M247 Europe SRL | Hoạt động |
-| 4 | `VN3` | 🇻🇳 Hà Nội (VN#3) | `25415` | `25414` | M247 Europe SRL | Hoạt động |
-| 5 | `VN4` | 🇻🇳 Hà Nội (VN#4) | `25361` | `25360` | M247 Europe SRL | Hoạt động |
-| 6 | `VN6` | 🇻🇳 Hà Nội (VN#6) | `25417` | `25416` | M247 Europe SRL | Hoạt động |
-| 7 | `VN7` | 🇻🇳 Hà Nội (VN#7) | `25419` | `25418` | M247 Europe SRL | Hoạt động |
-| 8 | `VN9` | 🇻🇳 Hà Nội (VN#9) | `25365` | `25364` | M247 Europe SRL | Hoạt động |
-| 9 | `VN10` | 🇻🇳 Hà Nội (VN#10) | `25421` | `25420` | M247 Europe SRL | Hoạt động |
-| 10 | `VN11` | 🇻🇳 Hà Nội (VN#11) | `25423` | `25422` | M247 Europe SRL | Hoạt động |
-| 11 | `VN12` | 🇻🇳 Hà Nội (VN#12) | `25425` | `25424` | M247 Europe SRL | Hoạt động |
-| 12 | `SG` | 🇸🇬 Singapore (SG#192) | `25347` | `25346` | Proton AG | Hoạt động |
-| 13 | `SG120` | 🇸🇬 Singapore (SG#120) | `25427` | `25426` | Proton AG | Hoạt động |
-| 14 | `SG171` | 🇸🇬 Singapore (SG#171) | `25371` | `25370` | Proton AG | Hoạt động |
-| 15 | `SG175` | 🇸🇬 Singapore (SG#175) | `25363` | `25362` | Proton AG | Hoạt động |
-| 16 | `SG228` | 🇸🇬 Singapore (SG#228) | `25369` | `25368` | Proton AG | Hoạt động |
-| 17 | `JP` | 🇯🇵 Tokyo (JP#188) | `25349` | `25348` | xTom GmbH | Hoạt động |
-| 18 | `JP201` | 🇯🇵 Osaka (JP#201) | `25431` | `25430` | Datacamp Limited | Hoạt động |
-| 19 | `JP202` | 🇯🇵 Osaka (JP#202) | `25433` | `25432` | Datacamp Limited | Hoạt động |
-| 20 | `HK` | 🇭🇰 Hồng Kông (HK#35) | `25353` | `25352` | M247 Europe SRL | Hoạt động |
-| 21 | `TW` | 🇹🇼 Cao Hùng (TW#21) | `25357` | `25356` | M247 Europe SRL | Hoạt động |
-| 22 | `KR` | 🇰🇷 Seoul (KR#24) | `25355` | `25354` | M247 Europe SRL | Hoạt động |
-| 23 | `US` | 🇺🇸 Hoa Kỳ (US-AZ#84) | `25351` | `25350` | M247 Europe SRL | Hoạt động |
-| 24 | `UK` | 🇬🇧 London (UK#186) | `25359` | `25358` | Datacamp Limited | Hoạt động |
+| 1 | `JP201` | 🇯🇵 Osaka (JP#201) | `25431` | `25430` | Datacamp Limited | Verified Live |
+| 2 | `JP202` | 🇯🇵 Osaka (JP#202) | `25433` | `25432` | Datacamp Limited | Verified Live |
+| 3 | `VN1` | 🇻🇳 Hà Nội (VN#1) | `25413` | `25412` | M247 Europe SRL | Verified Live |
+| 4 | `VN2` | 🇻🇳 Hà Nội (VN#2) | `25367` | `25366` | M247 Europe SRL | Verified Live |
+| 5 | `VN3` | 🇻🇳 Hà Nội (VN#3) | `25415` | `25414` | M247 Europe SRL | Verified Live |
+| 6 | `VN4` | 🇻🇳 Hà Nội (VN#4) | `25361` | `25360` | M247 Europe SRL | Verified Live |
+| 7 | `VN6` | 🇻🇳 Hà Nội (VN#6) | `25417` | `25416` | M247 Europe SRL | Verified Live |
+| 8 | `VN7` | 🇻🇳 Hà Nội (VN#7) | `25419` | `25418` | M247 Europe SRL | Verified Live |
+| 9 | `VN9` | 🇻🇳 Hà Nội (VN#9) | `25365` | `25364` | M247 Europe SRL | Verified Live |
+| 10 | `VN11` | 🇻🇳 Hà Nội (VN#11) | `25423` | `25422` | M247 Europe SRL | Verified Live |
+| 11 | `VN12` | 🇻🇳 Hà Nội (VN#12) | `25425` | `25424` | M247 Europe SRL | Verified Live |
 
 ---
 
