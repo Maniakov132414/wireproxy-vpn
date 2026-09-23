@@ -17,7 +17,7 @@ Hệ thống biến các cấu hình WireGuard VPN từ **ProtonVPN Plus** thàn
 
 ## 2. Bảng phân bổ Node & Địa chỉ IP
 
-Hệ thống hiện tại gồm **22 cụm máy chủ** trên **16 quốc gia** tốc độ cao, độ trễ thấp:
+Hệ thống hiện tại gồm **34 cụm máy chủ** trên **28 quốc gia** tốc độ cao, độ trễ thấp:
 
 | STT | Node | Quốc gia & Vị trí | Cổng HTTP | Cổng SOCKS5 | Nhà mạng / ASN | Trạng thái |
 | :-: | :--- | :--- | :-: | :-: | :--- | :-: |
@@ -35,14 +35,26 @@ Hệ thống hiện tại gồm **22 cụm máy chủ** trên **16 quốc gia** 
 | 12 | `TW` | 🇹🇼 Cao Hùng (TW#21) | `25357` | `25356` | M247 Europe SRL | Hoạt động |
 | 13 | `TH` | 🇹🇭 Thái Lan (TH#3) | `25383` | `25382` | M247 Europe SRL | Hoạt động |
 | 14 | `MY` | 🇲🇾 Malaysia (MY#11) | `25385` | `25384` | M247 Europe SRL | Hoạt động |
-| 15 | `IN` | 🇮🇳 Ấn Độ (IN#14) | `25387` | `25386` | Datacamp Limited | Hoạt động |
-| 16 | `AU` | 🇦🇺 Úc (AU#109) | `25381` | `25380` | HostRoyale Tech | Hoạt động |
-| 17 | `US` | 🇺🇸 Hoa Kỳ (US-AZ#84) | `25351` | `25350` | M247 Europe SRL | Hoạt động |
-| 18 | `CA` | 🇨🇦 Canada (CA#93) | `25379` | `25378` | M247 Europe SRL | Hoạt động |
-| 19 | `UK` | 🇬🇧 London (UK#186) | `25359` | `25358` | Datacamp Limited | Hoạt động |
-| 20 | `DE` | 🇩🇪 Đức (DE#187) | `25373` | `25372` | Datacamp Limited | Hoạt động |
-| 21 | `NL` | 🇳🇱 Hà Lan (NL#343) | `25375` | `25374` | Datacamp Limited | Hoạt động |
-| 22 | `FR` | 🇫🇷 Pháp (FR#167) | `25377` | `25376` | Datacamp Limited | Hoạt động |
+| 15 | `PH` | 🇵🇭 Philippines (PH#1) | `25405` | `25404` | Datacamp Limited | Hoạt động |
+| 16 | `ID` | 🇮🇩 Indonesia (ID#14) | `25407` | `25406` | Datacamp Limited | Hoạt động |
+| 17 | `IN` | 🇮🇳 Ấn Độ (IN#14) | `25387` | `25386` | Datacamp Limited | Hoạt động |
+| 18 | `AU` | 🇦🇺 Úc (AU#109) | `25381` | `25380` | HostRoyale Tech | Hoạt động |
+| 19 | `NZ` | 🇳🇿 New Zealand (NZ#20) | `25411` | `25410` | Datacamp Limited | Hoạt động |
+| 20 | `US` | 🇺🇸 Hoa Kỳ (US-AZ#84) | `25351` | `25350` | M247 Europe SRL | Hoạt động |
+| 21 | `CA` | 🇨🇦 Canada (CA#93) | `25379` | `25378` | M247 Europe SRL | Hoạt động |
+| 22 | `BR` | 🇧🇷 Brazil (BR#20) | `25409` | `25408` | Datacamp Limited | Hoạt động |
+| 23 | `UK` | 🇬🇧 London (UK#186) | `25359` | `25358` | Datacamp Limited | Hoạt động |
+| 24 | `DE` | 🇩🇪 Đức (DE#187) | `25373` | `25372` | Datacamp Limited | Hoạt động |
+| 25 | `NL` | 🇳🇱 Hà Lan (NL#343) | `25375` | `25374` | Datacamp Limited | Hoạt động |
+| 26 | `FR` | 🇫🇷 Pháp (FR#167) | `25377` | `25376` | Datacamp Limited | Hoạt động |
+| 27 | `CH` | 🇨🇭 Thụy Sĩ (CH#289) | `25389` | `25388` | Proton AG | Hoạt động |
+| 28 | `SE` | 🇸🇪 Thụy Điển (SE#76) | `25391` | `25390` | Datacamp Limited | Hoạt động |
+| 29 | `IT` | 🇮🇹 Ý (IT#19) | `25393` | `25392` | Datacamp Limited | Hoạt động |
+| 30 | `ES` | 🇪🇸 Tây Ban Nha (ES#71) | `25395` | `25394` | Datacamp Limited | Hoạt động |
+| 31 | `BE` | 🇧🇪 Bỉ (BE#43) | `25397` | `25396` | Datacamp Limited | Hoạt động |
+| 32 | `DK` | 🇩🇰 Đan Mạch (DK#52) | `25399` | `25398` | Datacamp Limited | Hoạt động |
+| 33 | `NO` | 🇳🇴 Na Uy (NO#21) | `25401` | `25400` | Datacamp Limited | Hoạt động |
+| 34 | `FI` | 🇫🇮 Phần Lan (FI#1) | `25403` | `25402` | Datacamp Limited | Hoạt động |
 
 ---
 
