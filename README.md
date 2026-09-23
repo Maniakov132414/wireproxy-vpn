@@ -7,7 +7,8 @@ Hệ thống biến các cấu hình WireGuard VPN từ **ProtonVPN Plus** thàn
 ## 1. Cơ chế hoạt động & Điểm nổi bật
 
 * **Cổng Master Proxy (`10800`)**: Lắng nghe mọi request HTTP/HTTPS và tự động xoay vòng (Round-Robin) qua danh sách các IP sạch từ ProtonVPN.
-* **Tự động chuyển tiếp lỗi (Intelligent Auto-Failover)**: Nếu 1 server VPN gặp hiện tượng gián đoạn hoặc phản hồi chậm quá 4 giây, hệ thống sẽ tự động gạch tên tạm thời và định tuyến ngay sang server kế tiếp, đảm bảo bot không bị đứt kết nối.
+* **Đổi ca trực thông minh (Dynamic Shift Rotation)**: Để không bao giờ vượt quá giới hạn 10 kết nối đồng thời của ProtonVPN, hệ thống duy trì tối đa 7 máy chủ online cùng lúc (`MAX_ACTIVE=7`). Cứ mỗi 3 phút (`SHIFT_INTERVAL_SEC=180`), hệ thống tự động cho server cũ nghỉ ngơi và kích hoạt server mới từ hàng đợi vào thay thế mượt mà (zero downtime).
+* **Tự động phục hồi tức thì (Instant Auto-Healing)**: Nếu 1 server gặp lỗi timeout quá 2 lần liên tiếp, hệ thống lập tức khởi động 1 server dự phòng khác để thay thế trong vòng 1.5 giây mà không làm gián đoạn bot.
 * **Không yêu cầu quyền Root**: Chạy Wireproxy ở tầng người dùng (Userspace WireGuard), không cần cài driver card mạng ảo TUN/TAP, tương thích hoàn hảo trong Docker container trên Railway.
 * **Tự động mở rộng (Hot-Reload)**: Tự động phát hiện và nạp các server VPN mới mà không cần can thiệp thủ công.
 
@@ -61,14 +62,16 @@ HTTP Proxy thông thường trên Railway chỉ xử lý web qua cổng 80/443, 
    ```
    *(Tên domain và port `54321` sẽ do Railway ngẫu nhiên cấp cho service của bạn).*
 
-### Bước 3: Cấu hình biến môi trường (Tùy chọn bảo mật)
-Để tránh bị người lạ scan và dùng trộm proxy của bạn, chuyển sang tab **Variables** trong Railway và thêm:
+### Bước 3: Cấu hình biến môi trường (Tùy chọn)
+Chuyển sang tab **Variables** trong Railway để điều chỉnh tham số theo ý muốn:
 
-| Tên biến | Giá trị gợi ý | Ý nghĩa |
+| Tên biến | Giá trị mặc định / gợi ý | Ý nghĩa |
 | :--- | :--- | :--- |
-| `REQUIRE_AUTH` | `true` | Bật tính năng xác thực mật khẩu cho proxy |
-| `PROXY_USER` | `admin` | Tên đăng nhập |
-| `PROXY_PASS` | `MatKhauCuaBan123` | Mật khẩu truy cập |
+| `MAX_ACTIVE` | `7` | Số lượng server chạy song song (khuyên dùng 7 để dưới trần 10 kết nối của Proton) |
+| `SHIFT_INTERVAL_SEC` | `180` | Chu kỳ đổi ca trực (tính bằng giây, 180s = 3 phút xoay đổi 1 server mới vào ca) |
+| `REQUIRE_AUTH` | `false` (hoặc `true`) | Bật/tắt yêu cầu mật khẩu truy cập proxy |
+| `PROXY_USER` | `admin` | Tên đăng nhập (nếu bật `REQUIRE_AUTH`) |
+| `PROXY_PASS` | `MatKhauCuaBan123` | Mật khẩu truy cập (nếu bật `REQUIRE_AUTH`) |
 
 ---
 
