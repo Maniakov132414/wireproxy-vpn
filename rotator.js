@@ -33,32 +33,34 @@ let currentIndex = 0;
 
 function parseConfigs() {
   if (!fs.existsSync(CONFIGS_DIR)) return [];
-  const files = fs.readdirSync(CONFIGS_DIR).filter(f => f.endsWith('.conf'));
+  const rawFiles = fs.readdirSync(CONFIGS_DIR).filter(f => f.endsWith('.conf'));
 
-  // Priority Sort: Vietnam & Singapore first (ultra-low latency from Railway SG), then East Asia, then major hubs, then worldwide
-  const priorityPrefixes = [
-    'wireproxy-vn',
-    'wireproxy-sg',
-    'wireproxy-hk',
-    'wireproxy-jp',
-    'wireproxy-tw',
-    'wireproxy-kr',
-    'wireproxy-us',
-    'wireproxy-de',
-    'wireproxy-uk',
-  ];
+  // Group by country code prefix (e.g. vn, sg, jp, hk, tw, kr, us, etc.)
+  const groups = {};
+  for (const file of rawFiles) {
+    const code = file.replace(/^wireproxy-/, '').replace(/\d+\.conf$/, '').replace(/\.conf$/, '');
+    if (!groups[code]) groups[code] = [];
+    groups[code].push(file);
+  }
 
-  files.sort((a, b) => {
-    const aPrio = priorityPrefixes.findIndex(p => a.startsWith(p));
-    const bPrio = priorityPrefixes.findIndex(p => b.startsWith(p));
-    if (aPrio !== -1 && bPrio !== -1) {
-      if (aPrio === bPrio) return a.localeCompare(b);
-      return aPrio - bPrio;
+  // Interleave preferred low-latency regions & hubs across the pool so the 7 warm nodes
+  // ALWAYS have 7 completely distinct public IP addresses!
+  const preferredOrder = ['vn', 'sg', 'hk', 'jp', 'tw', 'kr', 'us', 'de', 'uk', 'fr', 'nl', 'ca', 'au'];
+  const files = [];
+  const maxLen = Math.max(...Object.values(groups).map(g => g.length));
+
+  for (let i = 0; i < maxLen; i++) {
+    for (const code of preferredOrder) {
+      if (groups[code] && groups[code][i]) {
+        files.push(groups[code][i]);
+      }
     }
-    if (aPrio !== -1) return -1;
-    if (bPrio !== -1) return 1;
-    return a.localeCompare(b);
-  });
+    for (const [code, list] of Object.entries(groups)) {
+      if (!preferredOrder.includes(code) && list[i]) {
+        files.push(list[i]);
+      }
+    }
+  }
 
   const nodes = [];
 
