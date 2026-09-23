@@ -8,9 +8,9 @@ Hệ thống biến các cấu hình WireGuard VPN từ **ProtonVPN Plus** thàn
 
 * **Cổng Master Proxy (`10800`)**: Lắng nghe mọi request HTTP/HTTPS và phân phối đến các cụm máy chủ sạch của ProtonVPN.
 * **Xong là Tắt & Bật mới ngay lập tức (Ephemeral One-Shot Rotation)**: Mỗi khi 1 máy chủ VPN xử lý xong 1 request/kết nối của bot, tiến trình đó sẽ **tự động tắt ngay lập tức**, đồng thời hệ thống tự động kích hoạt máy chủ tiếp theo từ hàng đợi. Đảm bảo IP luôn luôn thay đổi liên tục cho từng tác vụ.
-* **Hàng đợi đệm sẵn (Pre-warmed Buffer, mặc định 5 server)**: Luôn duy trì sẵn 4–5 máy chủ trực chiến cùng lúc. Khi máy chủ cũ vừa tắt đi thì máy chủ mới đã được bật sẵn sàng từ trước, **hoàn toàn không có độ trễ kết nối**.
+* **Hàng đợi đệm sẵn (Pre-warmed Buffer, mặc định 1 server)**: Luôn duy trì sẵn 1 máy chủ trực chiến. Khi máy chủ cũ vừa xong việc tắt đi thì máy chủ mới kế tiếp đã được bật sẵn sàng từ trước, **hoàn toàn không có độ trễ kết nối**.
 * **Không cần Mật khẩu (No Auth)**: Cổng proxy mở trực tiếp, bot kết nối vào dùng ngay mà không cần cấu hình User/Pass rườm rà.
-* **An toàn tuyệt đối dưới trần 10 kết nối**: Vì chỉ giữ tối đa 4–5 server cùng lúc, hệ thống không bao giờ bị đụng giới hạn 10 kết nối đồng thời của ProtonVPN Plus, đường truyền luôn đạt 100% tốc độ cao nhất.
+* **Tiết kiệm thiết bị & Tự động ngủ (Idle Auto-Sleep)**: Mặc định chỉ chiếm tối đa **1 thiết bị** (`POOL_SIZE=1`) và tự động tắt về **0 kết nối** khi rảnh quá 60 giây. Bạn có thể mở app Proton VPN trên điện thoại/máy tính cá nhân dùng song song thoải mái mà không bao giờ bị báo chạm trần thiết bị.
 * **Không yêu cầu quyền Root**: Chạy Wireproxy ở tầng người dùng (Userspace WireGuard), không cần cài driver card mạng ảo TUN/TAP, tương thích hoàn hảo trong Docker container trên Railway.
 
 ---

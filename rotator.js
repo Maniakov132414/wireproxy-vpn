@@ -7,8 +7,9 @@ const { spawn } = require('child_process');
 const CONFIGS_DIR = path.join(__dirname, 'configs');
 
 // Configuration
-// Pool buffer size: number of warm, ready-to-serve WireGuard instances running at once
-const POOL_BUFFER_SIZE = parseInt(process.env.POOL_SIZE || '5', 10);
+// Pool buffer size: number of warm WireGuard instances running at once (default 1 to never hog Proton device limits)
+const POOL_BUFFER_SIZE = parseInt(process.env.POOL_SIZE || '1', 10);
+const IDLE_TIMEOUT_MS = parseInt(process.env.IDLE_TIMEOUT_MS || '60000', 10);
 const ROTATOR_PORT = parseInt(process.env.ROTATOR_PORT || process.env.PORT || '10800', 10);
 const BIND_ADDRESS = process.env.BIND_ADDRESS || '0.0.0.0';
 
@@ -123,26 +124,65 @@ function retireAndRotateNode(usedNode) {
   // If node still has other concurrent in-flight requests, wait until they finish
   if (usedNode.inFlight > 0) return;
 
-  // Find next dormant node from the queue
-  const dormantNodes = ALL_NODES.filter(n => !n.process);
-  if (dormantNodes.length > 0) {
-    const nextNode = dormantNodes[0];
-    console.log(`\n[Auto-Rotate] ${usedNode.name} finished task. Launching fresh ${nextNode.name}...`);
-    startNode(nextNode);
+  // Shut down the finished node first to free the device slot immediately
+  stopNode(usedNode);
 
-    // Stop the used node
-    stopNode(usedNode);
-
-    // Push the used node to the very end of the queue for next cycles
-    const idx = ALL_NODES.indexOf(usedNode);
-    if (idx > -1) {
-      ALL_NODES.splice(idx, 1);
-      ALL_NODES.push(usedNode);
-    }
-  } else {
-    // If no dormant nodes (all nodes are active), just reset
-    usedNode.markedForRetire = false;
+  // Push used node to the back of queue
+  const idx = ALL_NODES.indexOf(usedNode);
+  if (idx > -1) {
+    ALL_NODES.splice(idx, 1);
+    ALL_NODES.push(usedNode);
   }
+
+  // Pre-warm the next node up to POOL_BUFFER_SIZE
+  const activeCount = ALL_NODES.filter(n => n.process && n.active).length;
+  if (activeCount < POOL_BUFFER_SIZE) {
+    const dormantNodes = ALL_NODES.filter(n => !n.process);
+    if (dormantNodes.length > 0) {
+      const nextNode = dormantNodes[0];
+      console.log(`\n[Auto-Rotate] ${usedNode.name} finished task. Launching fresh ${nextNode.name}...`);
+      startNode(nextNode);
+    }
+  }
+}
+
+let lastActivityTime = Date.now();
+
+function waitForPort(port, host = '127.0.0.1', timeoutMs = 3000) {
+  return new Promise((resolve) => {
+    const start = Date.now();
+    const tryConnect = () => {
+      const sock = net.connect(port, host, () => {
+        sock.destroy();
+        resolve(true);
+      });
+      sock.on('error', () => {
+        sock.destroy();
+        if (Date.now() - start > timeoutMs) {
+          resolve(false);
+        } else {
+          setTimeout(tryConnect, 50);
+        }
+      });
+    };
+    tryConnect();
+  });
+}
+
+async function getOrWarmProxy() {
+  lastActivityTime = Date.now();
+  let proxy = ALL_NODES.find(p => p.process && p.active && !p.markedForRetire);
+  if (!proxy) {
+    const dormant = ALL_NODES.filter(n => !n.process);
+    const candidate = dormant[0] || ALL_NODES[0];
+    if (candidate) {
+      console.log(`[On-Demand Wakeup] Starting ${candidate.name}...`);
+      startNode(candidate);
+      await waitForPort(candidate.port, candidate.host, 3000);
+      proxy = candidate;
+    }
+  }
+  return proxy || ALL_NODES[0];
 }
 
 function initPool() {
@@ -151,6 +191,7 @@ function initPool() {
   console.log(` Wireproxy Ephemeral Rotating Proxy (One-Shot Per-Server)`);
   console.log(` Total Configs:    ${ALL_NODES.length} servers`);
   console.log(` Warm Buffer:      ${POOL_BUFFER_SIZE} servers pre-warmed & ready`);
+  console.log(` Idle Timeout:     ${Math.round(IDLE_TIMEOUT_MS / 1000)}s auto-sleep`);
   console.log(` Authentication:   None (Public / Open for Bot)`);
   console.log(` Rotation Rule:    After a server serves a request, it shuts down`);
   console.log(`                   and the next fresh country server launches!`);
@@ -162,32 +203,18 @@ function initPool() {
   }
 }
 
-// Pick the next available healthy active proxy
-function getNextProxy() {
-  const healthy = ALL_NODES.filter(p => p.process && p.active && !p.markedForRetire);
-  if (healthy.length === 0) {
-    // Fallback to any running node
-    const anyRunning = ALL_NODES.find(p => p.process && p.active);
-    return anyRunning || ALL_NODES[0] || { host: '127.0.0.1', port: 25345, name: 'Fallback' };
-  }
-  const proxy = healthy[currentIndex % healthy.length];
-  currentIndex = (currentIndex + 1) % healthy.length;
-  return proxy;
-}
-
 // HTTP Proxy Handler (No Auth Required)
-const server = http.createServer((req, res) => {
-  forwardHttp(req, res, 0);
+const server = http.createServer(async (req, res) => {
+  await forwardHttp(req, res, 0);
 });
 
-function forwardHttp(req, res, attempt) {
-  const activeCount = ALL_NODES.filter(p => p.process && p.active).length;
-  if (attempt >= Math.max(activeCount, 3)) {
+async function forwardHttp(req, res, attempt) {
+  if (attempt >= 3) {
     res.writeHead(502, { 'Content-Type': 'text/plain' });
     return res.end('All active upstream proxies failed');
   }
 
-  const target = getNextProxy();
+  const target = await getOrWarmProxy();
   target.inFlight = (target.inFlight || 0) + 1;
   target.servingCount = (target.servingCount || 0) + 1;
 
@@ -231,18 +258,17 @@ function forwardHttp(req, res, attempt) {
 }
 
 // HTTPS CONNECT Tunnel Handler (No Auth Required)
-server.on('connect', (req, clientSocket, head) => {
-  forwardConnect(req, clientSocket, head, 0);
+server.on('connect', async (req, clientSocket, head) => {
+  await forwardConnect(req, clientSocket, head, 0);
 });
 
-function forwardConnect(req, clientSocket, head, attempt) {
-  const activeCount = ALL_NODES.filter(p => p.process && p.active).length;
-  if (attempt >= Math.max(activeCount, 3)) {
+async function forwardConnect(req, clientSocket, head, attempt) {
+  if (attempt >= 3) {
     clientSocket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n');
     return clientSocket.end();
   }
 
-  const target = getNextProxy();
+  const target = await getOrWarmProxy();
   target.inFlight = (target.inFlight || 0) + 1;
   target.servingCount = (target.servingCount || 0) + 1;
 
@@ -289,14 +315,22 @@ function forwardConnect(req, clientSocket, head, attempt) {
   });
 }
 
-// Background idle sweeper: If system is idle for 60s, swap the oldest node anyway to keep IPs fresh
+// Background idle sweeper: If system is idle for IDLE_TIMEOUT_MS, put WireGuard instances to sleep
+// to free the Proton device slot 100% so you can use Proton on phone/PC without collision!
 setInterval(() => {
-  const activeNodes = ALL_NODES.filter(n => n.process && n.active && n.inFlight === 0);
-  const dormantNodes = ALL_NODES.filter(n => !n.process);
-  if (activeNodes.length > 0 && dormantNodes.length > 0) {
-    retireAndRotateNode(activeNodes[0]);
+  const idleDuration = Date.now() - lastActivityTime;
+  const inFlightCount = ALL_NODES.reduce((sum, n) => sum + (n.inFlight || 0), 0);
+
+  if (idleDuration >= IDLE_TIMEOUT_MS && inFlightCount === 0) {
+    const activeNodes = ALL_NODES.filter(n => n.process && n.active);
+    if (activeNodes.length > 0) {
+      console.log(`[Idle Sleep] Inactive for ${Math.round(idleDuration / 1000)}s. Shutting down active WireGuard nodes to free Proton device slot...`);
+      for (const node of activeNodes) {
+        stopNode(node);
+      }
+    }
   }
-}, 60000);
+}, 15000);
 
 server.listen(ROTATOR_PORT, BIND_ADDRESS, () => {
   initPool();
