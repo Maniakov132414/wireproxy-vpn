@@ -452,27 +452,51 @@ async function forwardConnect(req, clientSocket, head, attempt) {
     }
   }, 12000);
 
-  const upstreamSocket = net.connect(target.port, target.host, () => {
-    upstreamSocket.write(`CONNECT ${req.url} HTTP/1.1\r\nHost: ${req.url}\r\n\r\n`);
+  const upstreamSocket = net.connect(target.port, target.host);
 
-    upstreamSocket.once('data', (data) => {
-      clearTimeout(connectTimer);
-      if (data.toString().includes('200')) {
-        target.failures = 0;
+  upstreamSocket.on('error', () => {
+    clearTimeout(connectTimer);
+    try { clientSocket.destroy(); } catch (e) {}
+    done(true);
+  });
+
+  clientSocket.on('error', () => {
+    clearTimeout(connectTimer);
+    try { upstreamSocket.destroy(); } catch (e) {}
+    done(false);
+  });
+
+  upstreamSocket.on('connect', () => {
+    try {
+      upstreamSocket.write(`CONNECT ${req.url} HTTP/1.1\r\nHost: ${req.url}\r\n\r\n`);
+    } catch (e) {
+      done(true);
+    }
+  });
+
+  upstreamSocket.once('data', (data) => {
+    clearTimeout(connectTimer);
+    if (data.toString().includes('200')) {
+      target.failures = 0;
+      try {
         clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
         if (head && head.length) upstreamSocket.write(head);
         clientSocket.pipe(upstreamSocket);
         upstreamSocket.pipe(clientSocket);
-      } else {
+      } catch (e) {
         done(true);
-        if (attempt < 2) {
-          forwardConnect(req, clientSocket, head, attempt + 1);
-        } else {
+      }
+    } else {
+      done(true);
+      if (attempt < 2) {
+        forwardConnect(req, clientSocket, head, attempt + 1);
+      } else {
+        try {
           clientSocket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n');
           clientSocket.end();
-        }
+        } catch (e) {}
       }
-    });
+    }
   });
 
   clientSocket.once('close', () => done(false));
@@ -480,19 +504,9 @@ async function forwardConnect(req, clientSocket, head, attempt) {
 
   upstreamSocket.setTimeout(30000);
   upstreamSocket.on('timeout', () => {
-    upstreamSocket.destroy();
-    clientSocket.destroy();
+    try { upstreamSocket.destroy(); } catch (e) {}
+    try { clientSocket.destroy(); } catch (e) {}
     done(true);
-  });
-
-  upstreamSocket.on('error', () => {
-    clientSocket.destroy();
-    done(true);
-  });
-
-  clientSocket.on('error', () => {
-    upstreamSocket.destroy();
-    done(false);
   });
 }
 
@@ -500,18 +514,12 @@ async function forwardConnect(req, clientSocket, head, attempt) {
 async function handleSocks5(clientSocket, initialChunk) {
   const target = await getOrWarmProxy();
   if (!target || !target.socksPort) {
-    clientSocket.end();
+    try { clientSocket.end(); } catch (e) {}
     return;
   }
 
   target.inFlight = (target.inFlight || 0) + 1;
   target.servingCount = (target.servingCount || 0) + 1;
-
-  const upstreamSocket = net.connect(target.socksPort, target.host, () => {
-    upstreamSocket.write(initialChunk);
-    clientSocket.pipe(upstreamSocket);
-    upstreamSocket.pipe(clientSocket);
-  });
 
   let finished = false;
   function onSocksDone(isError = false) {
@@ -520,24 +528,36 @@ async function handleSocks5(clientSocket, initialChunk) {
     handleRequestDone(target, isError);
   }
 
+  const upstreamSocket = net.connect(target.socksPort, target.host);
+
+  upstreamSocket.on('error', () => {
+    try { clientSocket.destroy(); } catch (e) {}
+    onSocksDone(true);
+  });
+
+  clientSocket.on('error', () => {
+    try { upstreamSocket.destroy(); } catch (e) {}
+    onSocksDone(false);
+  });
+
+  upstreamSocket.on('connect', () => {
+    try {
+      upstreamSocket.write(initialChunk);
+      clientSocket.pipe(upstreamSocket);
+      upstreamSocket.pipe(clientSocket);
+    } catch (e) {
+      onSocksDone(true);
+    }
+  });
+
   clientSocket.once('close', () => onSocksDone(false));
   upstreamSocket.once('close', () => onSocksDone(false));
 
   upstreamSocket.setTimeout(30000);
   upstreamSocket.on('timeout', () => {
-    upstreamSocket.destroy();
-    clientSocket.destroy();
+    try { upstreamSocket.destroy(); } catch (e) {}
+    try { clientSocket.destroy(); } catch (e) {}
     onSocksDone(true);
-  });
-
-  upstreamSocket.on('error', () => {
-    clientSocket.destroy();
-    onSocksDone(true);
-  });
-
-  clientSocket.on('error', () => {
-    upstreamSocket.destroy();
-    onSocksDone(false);
   });
 }
 
@@ -613,9 +633,17 @@ if (fs.existsSync(CONFIGS_DIR)) {
   });
 }
 
-// Cleanup on exit
-function cleanup() {
-  console.log('\n[!] Shutting down all Wireproxy instances...');
+// Cleanup and safety
+process.on('uncaughtException', (err) => {
+  console.error('[UNCAUGHT EXCEPTION]', err && err.stack ? err.stack : err);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[UNHANDLED REJECTION]', reason);
+});
+
+function cleanup(signal) {
+  console.log(`\n[!] Shutting down all Wireproxy instances (Signal: ${signal})...`);
   for (const node of ALL_NODES) {
     if (node.process) {
       stopNode(node);
@@ -624,6 +652,5 @@ function cleanup() {
   process.exit(0);
 }
 
-process.on('SIGINT', cleanup);
-process.on('SIGTERM', cleanup);
-process.on('exit', cleanup);
+process.on('SIGINT', () => cleanup('SIGINT'));
+process.on('SIGTERM', () => cleanup('SIGTERM'));
