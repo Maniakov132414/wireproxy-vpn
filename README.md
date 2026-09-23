@@ -22,18 +22,18 @@ Hệ thống hiện tại gồm **42 cụm máy chủ** trên **28 quốc gia** 
 | STT | Node | Quốc gia & Vị trí | Cổng HTTP | Cổng SOCKS5 | Nhà mạng / ASN | Trạng thái |
 | :-: | :--- | :--- | :-: | :-: | :--- | :-: |
 | 1 | `VN` | 🇻🇳 Hà Nội (VN#8) | `25345` | `25344` | M247 Europe SRL | Hoạt động |
-| 2 | `VN1` | 🇻🇳 Hà Nội (VN#1) *(Mới)* | `25413` | `25412` | M247 Europe SRL | Hoạt động |
+| 2 | `VN1` | 🇻🇳 Hà Nội (VN#1) | `25413` | `25412` | M247 Europe SRL | Hoạt động |
 | 3 | `VN2` | 🇻🇳 Hà Nội (VN#2) | `25367` | `25366` | M247 Europe SRL | Hoạt động |
-| 4 | `VN3` | 🇻🇳 Hà Nội (VN#3) *(Mới)* | `25415` | `25414` | M247 Europe SRL | Hoạt động |
+| 4 | `VN3` | 🇻🇳 Hà Nội (VN#3) | `25415` | `25414` | M247 Europe SRL | Hoạt động |
 | 5 | `VN4` | 🇻🇳 Hà Nội (VN#4) | `25361` | `25360` | M247 Europe SRL | Hoạt động |
-| 6 | `VN6` | 🇻🇳 Hà Nội (VN#6) *(Mới)* | `25417` | `25416` | M247 Europe SRL | Hoạt động |
-| 7 | `VN7` | 🇻🇳 Hà Nội (VN#7) *(Mới)* | `25419` | `25418` | M247 Europe SRL | Hoạt động |
+| 6 | `VN6` | 🇻🇳 Hà Nội (VN#6) | `25417` | `25416` | M247 Europe SRL | Hoạt động |
+| 7 | `VN7` | 🇻🇳 Hà Nội (VN#7) | `25419` | `25418` | M247 Europe SRL | Hoạt động |
 | 8 | `VN9` | 🇻🇳 Hà Nội (VN#9) | `25365` | `25364` | M247 Europe SRL | Hoạt động |
-| 9 | `VN10` | 🇻🇳 Hà Nội (VN#10) *(Mới)* | `25421` | `25420` | M247 Europe SRL | Hoạt động |
-| 10 | `VN11` | 🇻🇳 Hà Nội (VN#11) *(Mới)* | `25423` | `25422` | M247 Europe SRL | Hoạt động |
-| 11 | `VN12` | 🇻🇳 Hà Nội (VN#12) *(Mới)* | `25425` | `25424` | M247 Europe SRL | Hoạt động |
+| 9 | `VN10` | 🇻🇳 Hà Nội (VN#10) | `25421` | `25420` | M247 Europe SRL | Hoạt động |
+| 10 | `VN11` | 🇻🇳 Hà Nội (VN#11) | `25423` | `25422` | M247 Europe SRL | Hoạt động |
+| 11 | `VN12` | 🇻🇳 Hà Nội (VN#12) | `25425` | `25424` | M247 Europe SRL | Hoạt động |
 | 12 | `SG` | 🇸🇬 Singapore (SG#196) | `25347` | `25346` | Proton AG | Hoạt động |
-| 13 | `SG120` | 🇸🇬 Singapore (SG#120) *(Mới)* | `25427` | `25426` | Proton AG | Hoạt động |
+| 13 | `SG120` | 🇸🇬 Singapore (SG#120) | `25427` | `25426` | Proton AG | Hoạt động |
 | 14 | `SG171` | 🇸🇬 Singapore (SG#171) | `25371` | `25370` | Proton AG | Hoạt động |
 | 15 | `SG175` | 🇸🇬 Singapore (SG#175) | `25363` | `25362` | Proton AG | Hoạt động |
 | 16 | `SG228` | 🇸🇬 Singapore (SG#228) | `25369` | `25368` | Proton AG | Hoạt động |
