@@ -9,7 +9,7 @@ const CONFIGS_DIR = path.join(__dirname, 'configs');
 // Configuration
 // Pool buffer size: number of warm WireGuard instances running at once (default 7, reserving 2 slots for personal PC & phone, 1 safety buffer under Proton's 10 limit)
 const POOL_BUFFER_SIZE = parseInt(process.env.POOL_SIZE || '7', 10);
-const MAX_REQUESTS_PER_NODE = parseInt(process.env.MAX_REQUESTS_PER_NODE || '25', 10);
+const MAX_REQUESTS_PER_NODE = parseInt(process.env.MAX_REQUESTS_PER_NODE || '100', 10);
 const IDLE_TIMEOUT_MS = parseInt(process.env.IDLE_TIMEOUT_MS || '90000', 10);
 const ROTATOR_PORT = parseInt(process.env.ROTATOR_PORT || process.env.PORT || '10800', 10);
 const BIND_ADDRESS = process.env.BIND_ADDRESS || '0.0.0.0';
@@ -92,100 +92,7 @@ function parseConfigs() {
   return nodes;
 }
 
-function startNode(node) {
-  if (node.process) return;
-
-  try {
-    const child = spawn(WIREPROXY_BIN, ['-s', '-c', node.filePath], {
-      stdio: 'ignore',
-      windowsHide: true,
-    });
-
-    node.process = child;
-    node.failures = 0;
-    node.active = true;
-    node.markedForRetire = false;
-
-    child.on('error', (err) => {
-      console.error(`[!] Failed to spawn ${node.name}: ${err.message}`);
-      node.process = null;
-      node.active = false;
-    });
-
-    child.on('exit', () => {
-      node.process = null;
-      node.active = false;
-    });
-
-    console.log(`[+] Started ${node.name.padEnd(14)} (Port: ${node.port}) -> Pre-warmed & Ready`);
-  } catch (err) {
-    console.error(`[!] Error launching ${node.name}: ${err.message}`);
-  }
-}
-
-function stopNode(node) {
-  if (!node.process) {
-    node.active = false;
-    node.markedForRetire = false;
-    return;
-  }
-  const proc = node.process;
-  node.process = null;
-  node.active = false;
-  node.markedForRetire = false;
-  try {
-    proc.kill('SIGTERM');
-  } catch (e) {
-    try { proc.kill('SIGKILL'); } catch (err) {}
-  }
-  console.log(`[-] Retired ${node.name.padEnd(14)} (Finished request -> Shut down)`);
-}
-
-// Retire a node that just finished its request, and immediately warm up the next dormant node
-function retireAndRotateNode(usedNode) {
-  // If already retired or not running, skip
-  if (!usedNode.process) return;
-
-  usedNode.markedForRetire = true;
-
-  // If node still has other concurrent in-flight requests, wait until they finish
-  if (usedNode.inFlight > 0) return;
-
-  // Shut down the finished node first to free the device slot immediately
-  stopNode(usedNode);
-
-  // Push used node to the back of queue
-  const idx = ALL_NODES.indexOf(usedNode);
-  if (idx > -1) {
-    ALL_NODES.splice(idx, 1);
-    ALL_NODES.push(usedNode);
-  }
-
-  // Pre-warm the next node up to POOL_BUFFER_SIZE
-  const activeCount = ALL_NODES.filter(n => n.process && n.active).length;
-  if (activeCount < POOL_BUFFER_SIZE) {
-    const dormantNodes = ALL_NODES.filter(n => !n.process);
-    if (dormantNodes.length > 0) {
-      const nextNode = dormantNodes[0];
-      console.log(`\n[Auto-Rotate] ${usedNode.name} finished task. Launching fresh ${nextNode.name}...`);
-      startNode(nextNode);
-    }
-  }
-}
-
-function handleRequestDone(target, isError = false) {
-  target.inFlight = Math.max(0, (target.inFlight || 1) - 1);
-  if (isError) {
-    target.failures = (target.failures || 0) + 1;
-    retireAndRotateNode(target);
-  } else if ((target.servingCount || 0) >= MAX_REQUESTS_PER_NODE) {
-    retireAndRotateNode(target);
-  }
-}
-
-let lastActivityTime = Date.now();
-
-function waitForPort(port, host = '127.0.0.1', timeoutMs = 3000) {
+function waitForPort(port, host = '127.0.0.1', timeoutMs = 4000) {
   return new Promise((resolve) => {
     const start = Date.now();
     const tryConnect = () => {
@@ -198,7 +105,7 @@ function waitForPort(port, host = '127.0.0.1', timeoutMs = 3000) {
         if (Date.now() - start > timeoutMs) {
           resolve(false);
         } else {
-          setTimeout(tryConnect, 50);
+          setTimeout(tryConnect, 80);
         }
       });
     };
@@ -206,12 +113,119 @@ function waitForPort(port, host = '127.0.0.1', timeoutMs = 3000) {
   });
 }
 
+async function startNode(node) {
+  if (node.process || node.starting) return;
+  node.starting = true;
+
+  try {
+    const child = spawn(WIREPROXY_BIN, ['-s', '-c', node.filePath], {
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+
+    node.process = child;
+    node.failures = 0;
+    node.active = false;
+    node.markedForRetire = false;
+
+    child.on('error', (err) => {
+      console.error(`[!] Failed to spawn ${node.name}: ${err.message}`);
+      node.process = null;
+      node.active = false;
+      node.starting = false;
+    });
+
+    child.on('exit', () => {
+      node.process = null;
+      node.active = false;
+      node.starting = false;
+    });
+
+    // Wait until local wireproxy port is confirmed listening before routing any traffic!
+    const ready = await waitForPort(node.port, node.host, 4000);
+    if (ready) {
+      node.active = true;
+      node.starting = false;
+      console.log(`[+] Started ${node.name.padEnd(14)} (Port: ${node.port}) -> Pre-warmed & Ready`);
+    } else {
+      console.warn(`[!] Node ${node.name} failed port check within 4s`);
+      stopNode(node);
+    }
+  } catch (err) {
+    node.starting = false;
+    node.active = false;
+    console.error(`[!] Error launching ${node.name}: ${err.message}`);
+  }
+}
+
+function stopNode(node) {
+  node.active = false;
+  node.starting = false;
+  node.markedForRetire = false;
+  if (!node.process) return;
+
+  const proc = node.process;
+  node.process = null;
+  try {
+    proc.kill('SIGTERM');
+  } catch (e) {
+    try { proc.kill('SIGKILL'); } catch (err) {}
+  }
+  console.log(`[-] Retired ${node.name.padEnd(14)} (Shut down)`);
+}
+
+// Retire a node safely: wait for any in-flight requests to complete before killing
+function retireAndRotateNode(usedNode) {
+  if (!usedNode.process && !usedNode.starting) return;
+
+  usedNode.markedForRetire = true;
+
+  // If node still has concurrent in-flight requests, wait until they finish naturally
+  if ((usedNode.inFlight || 0) > 0) return;
+
+  stopNode(usedNode);
+
+  // Push used node to the back of queue
+  const idx = ALL_NODES.indexOf(usedNode);
+  if (idx > -1) {
+    ALL_NODES.splice(idx, 1);
+    ALL_NODES.push(usedNode);
+  }
+
+  // Pre-warm the next node up to POOL_BUFFER_SIZE
+  replenishPool();
+}
+
+function handleRequestDone(target, isError = false) {
+  target.inFlight = Math.max(0, (target.inFlight || 1) - 1);
+  if (isError) {
+    target.failures = (target.failures || 0) + 1;
+    // Only retire if repeated failures occur and no active requests remain
+    if (target.failures >= 5 && target.inFlight === 0) {
+      console.warn(`[!] Node ${target.name} hit 5 consecutive errors, rotating...`);
+      retireAndRotateNode(target);
+    }
+  } else {
+    target.failures = 0;
+    if ((target.servingCount || 0) >= MAX_REQUESTS_PER_NODE && target.inFlight === 0) {
+      retireAndRotateNode(target);
+    }
+  }
+
+  // If this node was marked for retirement and in-flight reached 0:
+  if (target.markedForRetire && target.inFlight === 0) {
+    retireAndRotateNode(target);
+  }
+}
+
+let lastActivityTime = Date.now();
+
 // Pre-warm background nodes up to POOL_BUFFER_SIZE if below target
 function replenishPool() {
-  const activeCount = ALL_NODES.filter(n => n.process && n.active).length;
-  if (activeCount < POOL_BUFFER_SIZE) {
-    const needed = POOL_BUFFER_SIZE - activeCount;
-    const dormantNodes = ALL_NODES.filter(n => !n.process);
+  const activeOrStarting = ALL_NODES.filter(n => (n.process && n.active) || n.starting).length;
+  if (activeOrStarting < POOL_BUFFER_SIZE) {
+    const needed = POOL_BUFFER_SIZE - activeOrStarting;
+    const dormantNodes = ALL_NODES.filter(n => !n.process && !n.starting);
     for (let i = 0; i < Math.min(needed, dormantNodes.length); i++) {
       startNode(dormantNodes[i]);
     }
@@ -228,14 +242,19 @@ async function getOrWarmProxy() {
     return proxy;
   }
 
-  // If all were sleeping or none available:
-  const dormant = ALL_NODES.filter(n => !n.process);
+  // If all were sleeping or none ready yet:
+  const starting = ALL_NODES.find(n => n.starting);
+  if (starting) {
+    await waitForPort(starting.port, starting.host, 3000);
+    if (starting.active) return starting;
+  }
+
+  const dormant = ALL_NODES.filter(n => !n.process && !n.starting);
   const candidate = dormant[0] || ALL_NODES[0];
   if (candidate) {
     console.log(`[On-Demand Wakeup] Starting ${candidate.name}...`);
-    startNode(candidate);
-    await waitForPort(candidate.port, candidate.host, 3000);
-    setTimeout(replenishPool, 300);
+    await startNode(candidate);
+    replenishPool();
     return candidate;
   }
   return ALL_NODES[0];
@@ -247,10 +266,9 @@ function initPool() {
   console.log(` Wireproxy Ephemeral Rotating Proxy (One-Shot Per-Server)`);
   console.log(` Total Configs:    ${ALL_NODES.length} servers`);
   console.log(` Warm Buffer:      ${POOL_BUFFER_SIZE} servers pre-warmed & ready`);
+  console.log(` Max Per Node:     ${MAX_REQUESTS_PER_NODE} requests`);
   console.log(` Idle Timeout:     ${Math.round(IDLE_TIMEOUT_MS / 1000)}s auto-sleep`);
   console.log(` Authentication:   None (Public / Open for Bot)`);
-  console.log(` Rotation Rule:    After a server serves a request, it shuts down`);
-  console.log(`                   and the next fresh country server launches!`);
   console.log(`==========================================================\n`);
 
   const initialCount = Math.min(POOL_BUFFER_SIZE, ALL_NODES.length);
@@ -265,14 +283,16 @@ const httpServer = http.createServer(async (req, res) => {
 });
 
 async function forwardHttp(req, res, attempt) {
-  if (attempt >= 3) {
-    res.writeHead(502, { 'Content-Type': 'text/plain' });
-    return res.end('All active upstream proxies failed');
-  }
-
   const target = await getOrWarmProxy();
   target.inFlight = (target.inFlight || 0) + 1;
   target.servingCount = (target.servingCount || 0) + 1;
+
+  let finished = false;
+  function done(isErr) {
+    if (finished) return;
+    finished = true;
+    handleRequestDone(target, isErr);
+  }
 
   const options = {
     hostname: target.host,
@@ -288,20 +308,32 @@ async function forwardHttp(req, res, attempt) {
     res.writeHead(proxyRes.statusCode, proxyRes.headers);
     proxyRes.pipe(res);
 
-    res.on('finish', () => {
-      handleRequestDone(target, false);
-    });
+    res.on('finish', () => done(false));
   });
 
   proxyReq.on('timeout', () => {
     proxyReq.destroy();
-    handleRequestDone(target, true);
-    forwardHttp(req, res, attempt + 1);
+    done(true);
+    if (attempt < 2) {
+      forwardHttp(req, res, attempt + 1);
+    } else {
+      res.writeHead(504, { 'Content-Type': 'text/plain' });
+      res.end('Gateway Timeout');
+    }
   });
 
   proxyReq.on('error', () => {
-    handleRequestDone(target, true);
-    forwardHttp(req, res, attempt + 1);
+    done(true);
+    if (attempt < 2) {
+      forwardHttp(req, res, attempt + 1);
+    } else {
+      res.writeHead(502, { 'Content-Type': 'text/plain' });
+      res.end('Bad Gateway');
+    }
+  });
+
+  req.on('error', () => {
+    done(true);
   });
 
   req.pipe(proxyReq);
@@ -313,14 +345,16 @@ httpServer.on('connect', async (req, clientSocket, head) => {
 });
 
 async function forwardConnect(req, clientSocket, head, attempt) {
-  if (attempt >= 3) {
-    clientSocket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n');
-    return clientSocket.end();
-  }
-
   const target = await getOrWarmProxy();
   target.inFlight = (target.inFlight || 0) + 1;
   target.servingCount = (target.servingCount || 0) + 1;
+
+  let finished = false;
+  function done(isErr) {
+    if (finished) return;
+    finished = true;
+    handleRequestDone(target, isErr);
+  }
 
   const upstreamSocket = net.connect(target.port, target.host, () => {
     upstreamSocket.write(`CONNECT ${req.url} HTTP/1.1\r\nHost: ${req.url}\r\n\r\n`);
@@ -333,29 +367,35 @@ async function forwardConnect(req, clientSocket, head, attempt) {
         clientSocket.pipe(upstreamSocket);
         upstreamSocket.pipe(clientSocket);
       } else {
-        handleRequestDone(target, true);
-        forwardConnect(req, clientSocket, head, attempt + 1);
+        done(true);
+        if (attempt < 2) {
+          forwardConnect(req, clientSocket, head, attempt + 1);
+        } else {
+          clientSocket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n');
+          clientSocket.end();
+        }
       }
     });
   });
 
-  function onConnectDone() {
-    handleRequestDone(target, false);
-  }
-
-  clientSocket.once('close', onConnectDone);
-  upstreamSocket.once('close', onConnectDone);
+  clientSocket.once('close', () => done(false));
+  upstreamSocket.once('close', () => done(false));
 
   upstreamSocket.setTimeout(30000);
   upstreamSocket.on('timeout', () => {
     upstreamSocket.destroy();
-    handleRequestDone(target, true);
-    forwardConnect(req, clientSocket, head, attempt + 1);
+    clientSocket.destroy();
+    done(true);
   });
 
   upstreamSocket.on('error', () => {
-    handleRequestDone(target, true);
-    forwardConnect(req, clientSocket, head, attempt + 1);
+    clientSocket.destroy();
+    done(true);
+  });
+
+  clientSocket.on('error', () => {
+    upstreamSocket.destroy();
+    done(true);
   });
 }
 
