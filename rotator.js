@@ -9,7 +9,7 @@ const CONFIGS_DIR = path.join(__dirname, 'configs');
 // Configuration
 // Pool buffer size: number of warm WireGuard instances running at once (default 7, reserving 3 slots under Proton's 10 limit for personal devices & safety margin)
 const POOL_BUFFER_SIZE = parseInt(process.env.POOL_SIZE || '7', 10);
-const STICKY_REQUESTS_PER_NODE = parseInt(process.env.STICKY_REQUESTS || '5', 10);
+const STICKY_REQUESTS_PER_NODE = parseInt(process.env.STICKY_REQUESTS || '3', 10);
 const MAX_REQUESTS_PER_NODE = parseInt(process.env.MAX_REQUESTS_PER_NODE || '60', 10);
 const IDLE_TIMEOUT_MS = parseInt(process.env.IDLE_TIMEOUT_MS || '90000', 10);
 const ROTATOR_PORT = parseInt(process.env.ROTATOR_PORT || process.env.PORT || '10800', 10);
@@ -291,14 +291,14 @@ async function getOrWarmProxy() {
   lastActivityTime = Date.now();
   const healthy = ALL_NODES.filter(p => p.process && p.active && !p.markedForRetire);
 
-  // Sticky 5 requests per node: keeps cookie check sessions stable and prevents abrupt IP jumping!
+  // Sticky 3 requests per node: keeps cookie check sessions stable and prevents abrupt IP jumping!
   if (currentStickyNode && currentStickyNode.process && currentStickyNode.active && !currentStickyNode.markedForRetire && currentStickyCount < STICKY_REQUESTS_PER_NODE) {
     currentStickyCount++;
     replenishPool();
     return currentStickyNode;
   }
 
-  // After 5 requests, pick a new random node from the healthy warm pool
+  // After 3 requests, pick a new random node from the healthy warm pool
   if (healthy.length > 0) {
     let candidates = healthy.filter(n => n !== currentStickyNode);
     if (candidates.length === 0) candidates = healthy;
