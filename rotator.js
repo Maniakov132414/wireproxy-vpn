@@ -254,7 +254,7 @@ async function forwardHttp(req, res, attempt) {
     path: req.url,
     method: req.method,
     headers: req.headers,
-    timeout: 5000,
+    timeout: 25000,
   };
 
   const proxyReq = http.request(options, (proxyRes) => {
@@ -320,7 +320,7 @@ async function forwardConnect(req, clientSocket, head, attempt) {
   clientSocket.once('close', onConnectDone);
   upstreamSocket.once('close', onConnectDone);
 
-  upstreamSocket.setTimeout(15000);
+  upstreamSocket.setTimeout(30000);
   upstreamSocket.on('timeout', () => {
     upstreamSocket.destroy();
     handleRequestDone(target, true);
@@ -360,7 +360,7 @@ async function handleSocks5(clientSocket, initialChunk) {
   clientSocket.once('close', () => onSocksDone(false));
   upstreamSocket.once('close', () => onSocksDone(false));
 
-  upstreamSocket.setTimeout(15000);
+  upstreamSocket.setTimeout(30000);
   upstreamSocket.on('timeout', () => {
     upstreamSocket.destroy();
     clientSocket.destroy();
