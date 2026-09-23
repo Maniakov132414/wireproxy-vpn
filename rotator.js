@@ -7,9 +7,9 @@ const { spawn } = require('child_process');
 const CONFIGS_DIR = path.join(__dirname, 'configs');
 
 // Configuration
-// Pool buffer size: number of warm WireGuard instances running at once (default 7, reserving 2 slots for personal PC & phone, 1 safety buffer under Proton's 10 limit)
-const POOL_BUFFER_SIZE = parseInt(process.env.POOL_SIZE || '7', 10);
-const MAX_REQUESTS_PER_NODE = parseInt(process.env.MAX_REQUESTS_PER_NODE || '100', 10);
+// Pool buffer size: number of warm WireGuard instances running at once (default 6, reserving 4 slots under Proton's 10 limit for personal devices & safety margin)
+const POOL_BUFFER_SIZE = parseInt(process.env.POOL_SIZE || '6', 10);
+const MAX_REQUESTS_PER_NODE = parseInt(process.env.MAX_REQUESTS_PER_NODE || '60', 10);
 const IDLE_TIMEOUT_MS = parseInt(process.env.IDLE_TIMEOUT_MS || '90000', 10);
 const ROTATOR_PORT = parseInt(process.env.ROTATOR_PORT || process.env.PORT || '10800', 10);
 const BIND_ADDRESS = process.env.BIND_ADDRESS || '0.0.0.0';
@@ -43,9 +43,9 @@ function parseConfigs() {
     groups[code].push(file);
   }
 
-  // Interleave preferred low-latency regions & hubs across the pool so the 7 warm nodes
-  // ALWAYS have 7 completely distinct public IP addresses!
-  const preferredOrder = ['vn', 'sg', 'hk', 'jp', 'tw', 'kr', 'us', 'de', 'uk', 'fr', 'nl', 'ca', 'au'];
+  // Interleave preferred low-latency regions & hubs across the pool so the warm nodes
+  // ALWAYS have distinct public IP addresses!
+  const preferredOrder = ['vn', 'sg', 'jp', 'hk', 'tw', 'kr', 'us', 'uk'];
   const files = [];
   const maxLen = Math.max(...Object.values(groups).map(g => g.length));
 
@@ -115,6 +115,31 @@ function waitForPort(port, host = '127.0.0.1', timeoutMs = 4000) {
   });
 }
 
+// Actively probe WireGuard tunnel internet connectivity directly via IP (avoids DNS delays)
+function probeNodeConnectivity(port, host = '127.0.0.1', timeoutMs = 3500) {
+  return new Promise((resolve) => {
+    const req = http.get({
+      host,
+      port,
+      path: 'http://1.1.1.1/cdn-cgi/trace',
+      timeout: timeoutMs,
+      headers: { Host: '1.1.1.1' },
+    }, (res) => {
+      let body = '';
+      res.on('data', chunk => body += chunk);
+      res.on('end', () => {
+        const ipMatch = body.match(/ip=([^\r\n]+)/);
+        resolve({ ok: true, ip: ipMatch ? ipMatch[1].trim() : 'live' });
+      });
+    });
+    req.on('error', () => resolve({ ok: false }));
+    req.on('timeout', () => {
+      req.destroy();
+      resolve({ ok: false });
+    });
+  });
+}
+
 async function startNode(node) {
   if (node.process || node.starting) return;
   node.starting = true;
@@ -143,15 +168,30 @@ async function startNode(node) {
       node.starting = false;
     });
 
-    // Wait until local wireproxy port is confirmed listening before routing any traffic!
+    // Wait until local wireproxy port is confirmed listening
     const ready = await waitForPort(node.port, node.host, 4000);
-    if (ready) {
+    if (!ready) {
+      console.warn(`[!] Node ${node.name} failed local port bind within 4s`);
+      stopNode(node);
+      return;
+    }
+
+    // Actively probe WireGuard tunnel connectivity before exposing to clients!
+    const probe = await probeNodeConnectivity(node.port, node.host, 3500);
+    if (probe.ok) {
       node.active = true;
       node.starting = false;
-      console.log(`[+] Started ${node.name.padEnd(14)} (Port: ${node.port}) -> Pre-warmed & Ready`);
+      console.log(`[+] Started ${node.name.padEnd(14)} (Port: ${node.port}) -> Verified Live (${probe.ip})`);
     } else {
-      console.warn(`[!] Node ${node.name} failed port check within 4s`);
+      console.warn(`[!] Node ${node.name} failed tunnel handshake probe, bypassing...`);
       stopNode(node);
+      // Deprioritize dead node to end of queue so healthy ones run first
+      const idx = ALL_NODES.indexOf(node);
+      if (idx > -1) {
+        ALL_NODES.splice(idx, 1);
+        ALL_NODES.push(node);
+      }
+      setTimeout(replenishPool, 200);
     }
   } catch (err) {
     node.starting = false;
@@ -358,10 +398,26 @@ async function forwardConnect(req, clientSocket, head, attempt) {
     handleRequestDone(target, isErr);
   }
 
+  let connectTimer = setTimeout(() => {
+    if (!finished) {
+      try { upstreamSocket.destroy(); } catch (e) {}
+      done(true);
+      if (attempt < 2) {
+        forwardConnect(req, clientSocket, head, attempt + 1);
+      } else {
+        try {
+          clientSocket.write('HTTP/1.1 504 Gateway Timeout\r\n\r\n');
+          clientSocket.end();
+        } catch (e) {}
+      }
+    }
+  }, 6000);
+
   const upstreamSocket = net.connect(target.port, target.host, () => {
     upstreamSocket.write(`CONNECT ${req.url} HTTP/1.1\r\nHost: ${req.url}\r\n\r\n`);
 
     upstreamSocket.once('data', (data) => {
+      clearTimeout(connectTimer);
       if (data.toString().includes('200')) {
         target.failures = 0;
         clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
