@@ -268,6 +268,11 @@ function replenishPool() {
   if (activeOrStarting < POOL_BUFFER_SIZE) {
     const needed = POOL_BUFFER_SIZE - activeOrStarting;
     const dormantNodes = ALL_NODES.filter(n => !n.process && !n.starting);
+    // Fisher-Yates shuffle dormant nodes so replenishment is 100% random across all countries
+    for (let i = dormantNodes.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [dormantNodes[i], dormantNodes[j]] = [dormantNodes[j], dormantNodes[i]];
+    }
     for (let i = 0; i < Math.min(needed, dormantNodes.length); i++) {
       startNode(dormantNodes[i]);
     }
@@ -278,8 +283,9 @@ async function getOrWarmProxy() {
   lastActivityTime = Date.now();
   const healthy = ALL_NODES.filter(p => p.process && p.active && !p.markedForRetire);
   if (healthy.length > 0) {
-    const proxy = healthy[currentIndex % healthy.length];
-    currentIndex = (currentIndex + 1) % healthy.length;
+    // 100% Random selection among active healthy nodes
+    const randomIndex = Math.floor(Math.random() * healthy.length);
+    const proxy = healthy[randomIndex];
     replenishPool();
     return proxy;
   }
@@ -292,7 +298,9 @@ async function getOrWarmProxy() {
   }
 
   const dormant = ALL_NODES.filter(n => !n.process && !n.starting);
-  const candidate = dormant[0] || ALL_NODES[0];
+  const candidate = dormant.length > 0
+    ? dormant[Math.floor(Math.random() * dormant.length)]
+    : ALL_NODES[0];
   if (candidate) {
     console.log(`[On-Demand Wakeup] Starting ${candidate.name}...`);
     await startNode(candidate);
@@ -304,8 +312,14 @@ async function getOrWarmProxy() {
 
 function initPool() {
   ALL_NODES = parseConfigs();
+  // Shuffle all nodes initially for 100% random startup across all countries
+  for (let i = ALL_NODES.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [ALL_NODES[i], ALL_NODES[j]] = [ALL_NODES[j], ALL_NODES[i]];
+  }
+
   console.log(`==========================================================`);
-  console.log(` Wireproxy Ephemeral Rotating Proxy (One-Shot Per-Server)`);
+  console.log(` Wireproxy Ephemeral Rotating Proxy (100% Random Rotation)`);
   console.log(` Total Configs:    ${ALL_NODES.length} servers`);
   console.log(` Warm Buffer:      ${POOL_BUFFER_SIZE} servers pre-warmed & ready`);
   console.log(` Max Per Node:     ${MAX_REQUESTS_PER_NODE} requests`);
@@ -502,14 +516,15 @@ async function handleSocks5(clientSocket, initialChunk) {
   });
 }
 
-// Periodic graceful rotation: Every 30s, swap the oldest node to ensure continuous rotation across all 42 countries
+// Periodic graceful rotation: Every 20s, pick a random active node with 0 inFlight and rotate it to a random dormant node
 setInterval(() => {
   const activeNodes = ALL_NODES.filter(n => n.process && n.active && !n.markedForRetire && n.inFlight === 0);
-  const dormantNodes = ALL_NODES.filter(n => !n.process);
+  const dormantNodes = ALL_NODES.filter(n => !n.process && !n.starting);
   if (activeNodes.length > 0 && dormantNodes.length > 0) {
-    retireAndRotateNode(activeNodes[0]);
+    const randomActive = activeNodes[Math.floor(Math.random() * activeNodes.length)];
+    retireAndRotateNode(randomActive);
   }
-}, 30000);
+}, 20000);
 
 // Background idle sweeper: If system is idle for IDLE_TIMEOUT_MS, put WireGuard instances to sleep
 // to free the Proton device slot 100% so you can use Proton on phone/PC without collision!
