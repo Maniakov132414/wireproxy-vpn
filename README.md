@@ -8,9 +8,9 @@ Hệ thống biến các cấu hình WireGuard VPN từ **ProtonVPN Plus** thàn
 
 * **Cổng Master Proxy (`10800`)**: Lắng nghe mọi request HTTP/HTTPS và phân phối đến các cụm máy chủ sạch của ProtonVPN.
 * **Xong là Tắt & Bật mới ngay lập tức (Ephemeral One-Shot Rotation)**: Mỗi khi 1 máy chủ VPN xử lý xong 1 request/kết nối của bot, tiến trình đó sẽ **tự động tắt ngay lập tức**, đồng thời hệ thống tự động kích hoạt máy chủ tiếp theo từ hàng đợi. Đảm bảo IP luôn luôn thay đổi liên tục cho từng tác vụ.
-* **Hàng đợi đệm sẵn (Pre-warmed Buffer, mặc định 1 server)**: Luôn duy trì sẵn 1 máy chủ trực chiến. Khi máy chủ cũ vừa xong việc tắt đi thì máy chủ mới kế tiếp đã được bật sẵn sàng từ trước, **hoàn toàn không có độ trễ kết nối**.
+* **Hàng đợi đệm sẵn (Pre-warmed Buffer, mặc định 7 server)**: Luôn duy trì sẵn 7 máy chủ trực chiến luân phiên. Khi một máy chủ hoàn thành request và tắt đi, máy chủ kế tiếp từ hàng đợi sẽ lập tức khởi động bù vào, **hoàn toàn không có độ trễ kết nối**.
 * **Không cần Mật khẩu (No Auth)**: Cổng proxy mở trực tiếp, bot kết nối vào dùng ngay mà không cần cấu hình User/Pass rườm rà.
-* **Tiết kiệm thiết bị & Tự động ngủ (Idle Auto-Sleep)**: Mặc định chỉ chiếm tối đa **1 thiết bị** (`POOL_SIZE=1`) và tự động tắt về **0 kết nối** khi rảnh quá 60 giây. Bạn có thể mở app Proton VPN trên điện thoại/máy tính cá nhân dùng song song thoải mái mà không bao giờ bị báo chạm trần thiết bị.
+* **Tối ưu thiết bị (Dành riêng 2 slot cho PC & Điện thoại)**: Cụm proxy giới hạn tối đa **7 kết nối đồng thời** (`POOL_SIZE=7`), chừa cố định 2 slot cho PC và Điện thoại cá nhân của bạn hoạt động song song + 1 slot đệm an toàn dưới trần 10 thiết bị của Proton. Kèm tính năng **Tự động ngủ (Auto-Sleep)** tắt sạch về 0 kết nối khi không có request trong 90 giây.
 * **Không yêu cầu quyền Root**: Chạy Wireproxy ở tầng người dùng (Userspace WireGuard), không cần cài driver card mạng ảo TUN/TAP, tương thích hoàn hảo trong Docker container trên Railway.
 
 ---

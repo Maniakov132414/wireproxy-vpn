@@ -7,9 +7,9 @@ const { spawn } = require('child_process');
 const CONFIGS_DIR = path.join(__dirname, 'configs');
 
 // Configuration
-// Pool buffer size: number of warm WireGuard instances running at once (default 1 to never hog Proton device limits)
-const POOL_BUFFER_SIZE = parseInt(process.env.POOL_SIZE || '1', 10);
-const IDLE_TIMEOUT_MS = parseInt(process.env.IDLE_TIMEOUT_MS || '60000', 10);
+// Pool buffer size: number of warm WireGuard instances running at once (default 7, reserving 2 slots for personal PC & phone, 1 safety buffer under Proton's 10 limit)
+const POOL_BUFFER_SIZE = parseInt(process.env.POOL_SIZE || '7', 10);
+const IDLE_TIMEOUT_MS = parseInt(process.env.IDLE_TIMEOUT_MS || '90000', 10);
 const ROTATOR_PORT = parseInt(process.env.ROTATOR_PORT || process.env.PORT || '10800', 10);
 const BIND_ADDRESS = process.env.BIND_ADDRESS || '0.0.0.0';
 
@@ -169,20 +169,39 @@ function waitForPort(port, host = '127.0.0.1', timeoutMs = 3000) {
   });
 }
 
-async function getOrWarmProxy() {
-  lastActivityTime = Date.now();
-  let proxy = ALL_NODES.find(p => p.process && p.active && !p.markedForRetire);
-  if (!proxy) {
-    const dormant = ALL_NODES.filter(n => !n.process);
-    const candidate = dormant[0] || ALL_NODES[0];
-    if (candidate) {
-      console.log(`[On-Demand Wakeup] Starting ${candidate.name}...`);
-      startNode(candidate);
-      await waitForPort(candidate.port, candidate.host, 3000);
-      proxy = candidate;
+// Pre-warm background nodes up to POOL_BUFFER_SIZE if below target
+function replenishPool() {
+  const activeCount = ALL_NODES.filter(n => n.process && n.active).length;
+  if (activeCount < POOL_BUFFER_SIZE) {
+    const needed = POOL_BUFFER_SIZE - activeCount;
+    const dormantNodes = ALL_NODES.filter(n => !n.process);
+    for (let i = 0; i < Math.min(needed, dormantNodes.length); i++) {
+      startNode(dormantNodes[i]);
     }
   }
-  return proxy || ALL_NODES[0];
+}
+
+async function getOrWarmProxy() {
+  lastActivityTime = Date.now();
+  const healthy = ALL_NODES.filter(p => p.process && p.active && !p.markedForRetire);
+  if (healthy.length > 0) {
+    const proxy = healthy[currentIndex % healthy.length];
+    currentIndex = (currentIndex + 1) % healthy.length;
+    replenishPool();
+    return proxy;
+  }
+
+  // If all were sleeping or none available:
+  const dormant = ALL_NODES.filter(n => !n.process);
+  const candidate = dormant[0] || ALL_NODES[0];
+  if (candidate) {
+    console.log(`[On-Demand Wakeup] Starting ${candidate.name}...`);
+    startNode(candidate);
+    await waitForPort(candidate.port, candidate.host, 3000);
+    setTimeout(replenishPool, 300);
+    return candidate;
+  }
+  return ALL_NODES[0];
 }
 
 function initPool() {
