@@ -9,6 +9,7 @@ const CONFIGS_DIR = path.join(__dirname, 'configs');
 // Configuration
 // Pool buffer size: number of warm WireGuard instances running at once (default 7, reserving 2 slots for personal PC & phone, 1 safety buffer under Proton's 10 limit)
 const POOL_BUFFER_SIZE = parseInt(process.env.POOL_SIZE || '7', 10);
+const MAX_REQUESTS_PER_NODE = parseInt(process.env.MAX_REQUESTS_PER_NODE || '25', 10);
 const IDLE_TIMEOUT_MS = parseInt(process.env.IDLE_TIMEOUT_MS || '90000', 10);
 const ROTATOR_PORT = parseInt(process.env.ROTATOR_PORT || process.env.PORT || '10800', 10);
 const BIND_ADDRESS = process.env.BIND_ADDRESS || '0.0.0.0';
@@ -146,6 +147,16 @@ function retireAndRotateNode(usedNode) {
   }
 }
 
+function handleRequestDone(target, isError = false) {
+  target.inFlight = Math.max(0, (target.inFlight || 1) - 1);
+  if (isError) {
+    target.failures = (target.failures || 0) + 1;
+    retireAndRotateNode(target);
+  } else if ((target.servingCount || 0) >= MAX_REQUESTS_PER_NODE) {
+    retireAndRotateNode(target);
+  }
+}
+
 let lastActivityTime = Date.now();
 
 function waitForPort(port, host = '127.0.0.1', timeoutMs = 3000) {
@@ -252,24 +263,18 @@ async function forwardHttp(req, res, attempt) {
     proxyRes.pipe(res);
 
     res.on('finish', () => {
-      target.inFlight = Math.max(0, (target.inFlight || 1) - 1);
-      // Once request is done, retire this server and bring in a brand new one!
-      retireAndRotateNode(target);
+      handleRequestDone(target, false);
     });
   });
 
   proxyReq.on('timeout', () => {
     proxyReq.destroy();
-    target.inFlight = Math.max(0, (target.inFlight || 1) - 1);
-    target.failures = (target.failures || 0) + 1;
-    retireAndRotateNode(target);
+    handleRequestDone(target, true);
     forwardHttp(req, res, attempt + 1);
   });
 
   proxyReq.on('error', () => {
-    target.inFlight = Math.max(0, (target.inFlight || 1) - 1);
-    target.failures = (target.failures || 0) + 1;
-    retireAndRotateNode(target);
+    handleRequestDone(target, true);
     forwardHttp(req, res, attempt + 1);
   });
 
@@ -302,16 +307,14 @@ async function forwardConnect(req, clientSocket, head, attempt) {
         clientSocket.pipe(upstreamSocket);
         upstreamSocket.pipe(clientSocket);
       } else {
-        target.inFlight = Math.max(0, (target.inFlight || 1) - 1);
-        retireAndRotateNode(target);
+        handleRequestDone(target, true);
         forwardConnect(req, clientSocket, head, attempt + 1);
       }
     });
   });
 
   function onConnectDone() {
-    target.inFlight = Math.max(0, (target.inFlight || 1) - 1);
-    retireAndRotateNode(target);
+    handleRequestDone(target, false);
   }
 
   clientSocket.once('close', onConnectDone);
@@ -320,16 +323,12 @@ async function forwardConnect(req, clientSocket, head, attempt) {
   upstreamSocket.setTimeout(15000);
   upstreamSocket.on('timeout', () => {
     upstreamSocket.destroy();
-    target.inFlight = Math.max(0, (target.inFlight || 1) - 1);
-    target.failures = (target.failures || 0) + 1;
-    retireAndRotateNode(target);
+    handleRequestDone(target, true);
     forwardConnect(req, clientSocket, head, attempt + 1);
   });
 
   upstreamSocket.on('error', () => {
-    target.inFlight = Math.max(0, (target.inFlight || 1) - 1);
-    target.failures = (target.failures || 0) + 1;
-    retireAndRotateNode(target);
+    handleRequestDone(target, true);
     forwardConnect(req, clientSocket, head, attempt + 1);
   });
 }
@@ -351,34 +350,42 @@ async function handleSocks5(clientSocket, initialChunk) {
     upstreamSocket.pipe(clientSocket);
   });
 
-  let retired = false;
-  function onSocksDone() {
-    if (retired) return;
-    retired = true;
-    target.inFlight = Math.max(0, (target.inFlight || 1) - 1);
-    retireAndRotateNode(target);
+  let finished = false;
+  function onSocksDone(isError = false) {
+    if (finished) return;
+    finished = true;
+    handleRequestDone(target, isError);
   }
 
-  clientSocket.once('close', onSocksDone);
-  upstreamSocket.once('close', onSocksDone);
+  clientSocket.once('close', () => onSocksDone(false));
+  upstreamSocket.once('close', () => onSocksDone(false));
 
   upstreamSocket.setTimeout(15000);
   upstreamSocket.on('timeout', () => {
     upstreamSocket.destroy();
     clientSocket.destroy();
-    onSocksDone();
+    onSocksDone(true);
   });
 
   upstreamSocket.on('error', () => {
     clientSocket.destroy();
-    onSocksDone();
+    onSocksDone(true);
   });
 
   clientSocket.on('error', () => {
     upstreamSocket.destroy();
-    onSocksDone();
+    onSocksDone(true);
   });
 }
+
+// Periodic graceful rotation: Every 30s, swap the oldest node to ensure continuous rotation across all 42 countries
+setInterval(() => {
+  const activeNodes = ALL_NODES.filter(n => n.process && n.active && !n.markedForRetire && n.inFlight === 0);
+  const dormantNodes = ALL_NODES.filter(n => !n.process);
+  if (activeNodes.length > 0 && dormantNodes.length > 0) {
+    retireAndRotateNode(activeNodes[0]);
+  }
+}, 30000);
 
 // Background idle sweeper: If system is idle for IDLE_TIMEOUT_MS, put WireGuard instances to sleep
 // to free the Proton device slot 100% so you can use Proton on phone/PC without collision!
