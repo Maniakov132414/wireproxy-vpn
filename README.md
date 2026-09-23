@@ -17,24 +17,32 @@ Hệ thống biến các cấu hình WireGuard VPN từ **ProtonVPN Plus** thàn
 
 ## 2. Bảng phân bổ Node & Địa chỉ IP
 
-Hệ thống hiện tại gồm **14 cụm máy chủ** tốc độ cao, độ trễ thấp:
+Hệ thống hiện tại gồm **22 cụm máy chủ** trên **16 quốc gia** tốc độ cao, độ trễ thấp:
 
-| STT | Node | Quốc gia & Thành phố | Cổng HTTP | Cổng SOCKS5 | Nhà mạng / ASN | Trạng thái |
+| STT | Node | Quốc gia & Vị trí | Cổng HTTP | Cổng SOCKS5 | Nhà mạng / ASN | Trạng thái |
 | :-: | :--- | :--- | :-: | :-: | :--- | :-: |
-| 1 | `SG` | 🇸🇬 Singapore (SG#196) | `25347` | `25346` | Proton AG | Hoạt động |
-| 2 | `SG175` | 🇸🇬 Singapore (SG#175) | `25363` | `25362` | Proton AG | Hoạt động |
-| 3 | `SG228` | 🇸🇬 Singapore (SG#228) | `25369` | `25368` | Proton AG | Hoạt động |
-| 4 | `SG171` | 🇸🇬 Singapore (SG#171) | `25371` | `25370` | Proton AG | Hoạt động |
-| 5 | `VN` | 🇻🇳 Hà Nội (VN#8) | `25345` | `25344` | M247 Europe SRL | Hoạt động |
-| 6 | `VN4` | 🇻🇳 Hà Nội (VN#4) | `25361` | `25360` | M247 Europe SRL | Hoạt động |
-| 7 | `VN9` | 🇻🇳 Hà Nội (VN#9) | `25365` | `25364` | M247 Europe SRL | Hoạt động |
-| 8 | `VN2` | 🇻🇳 Hà Nội (VN#2) | `25367` | `25366` | M247 Europe SRL | Hoạt động |
+| 1 | `VN` | 🇻🇳 Hà Nội (VN#8) | `25345` | `25344` | M247 Europe SRL | Hoạt động |
+| 2 | `VN4` | 🇻🇳 Hà Nội (VN#4) | `25361` | `25360` | M247 Europe SRL | Hoạt động |
+| 3 | `VN9` | 🇻🇳 Hà Nội (VN#9) | `25365` | `25364` | M247 Europe SRL | Hoạt động |
+| 4 | `VN2` | 🇻🇳 Hà Nội (VN#2) | `25367` | `25366` | M247 Europe SRL | Hoạt động |
+| 5 | `SG` | 🇸🇬 Singapore (SG#196) | `25347` | `25346` | Proton AG | Hoạt động |
+| 6 | `SG175` | 🇸🇬 Singapore (SG#175) | `25363` | `25362` | Proton AG | Hoạt động |
+| 7 | `SG228` | 🇸🇬 Singapore (SG#228) | `25369` | `25368` | Proton AG | Hoạt động |
+| 8 | `SG171` | 🇸🇬 Singapore (SG#171) | `25371` | `25370` | Proton AG | Hoạt động |
 | 9 | `JP` | 🇯🇵 Tokyo (JP#188) | `25349` | `25348` | xTom GmbH | Hoạt động |
-| 10 | `TW` | 🇹🇼 Cao Hùng (TW#21) | `25357` | `25356` | M247 Europe SRL | Hoạt động |
-| 11 | `HK` | 🇭🇰 Hồng Kông (HK#35) | `25353` | `25352` | M247 Europe SRL | Hoạt động |
-| 12 | `KR` | 🇰🇷 Seoul (KR#24) | `25355` | `25354` | M247 Europe SRL | Hoạt động |
-| 13 | `US` | 🇺🇸 Virginia / Arizona (US-AZ#84) | `25351` | `25350` | M247 Europe SRL | Hoạt động |
-| 14 | `UK` | 🇬🇧 London (UK#186) | `25359` | `25358` | Datacamp Limited | Hoạt động |
+| 10 | `HK` | 🇭🇰 Hồng Kông (HK#35) | `25353` | `25352` | M247 Europe SRL | Hoạt động |
+| 11 | `KR` | 🇰🇷 Seoul (KR#24) | `25355` | `25354` | M247 Europe SRL | Hoạt động |
+| 12 | `TW` | 🇹🇼 Cao Hùng (TW#21) | `25357` | `25356` | M247 Europe SRL | Hoạt động |
+| 13 | `TH` | 🇹🇭 Thái Lan (TH#3) | `25383` | `25382` | M247 Europe SRL | Hoạt động |
+| 14 | `MY` | 🇲🇾 Malaysia (MY#11) | `25385` | `25384` | M247 Europe SRL | Hoạt động |
+| 15 | `IN` | 🇮🇳 Ấn Độ (IN#14) | `25387` | `25386` | Datacamp Limited | Hoạt động |
+| 16 | `AU` | 🇦🇺 Úc (AU#109) | `25381` | `25380` | HostRoyale Tech | Hoạt động |
+| 17 | `US` | 🇺🇸 Hoa Kỳ (US-AZ#84) | `25351` | `25350` | M247 Europe SRL | Hoạt động |
+| 18 | `CA` | 🇨🇦 Canada (CA#93) | `25379` | `25378` | M247 Europe SRL | Hoạt động |
+| 19 | `UK` | 🇬🇧 London (UK#186) | `25359` | `25358` | Datacamp Limited | Hoạt động |
+| 20 | `DE` | 🇩🇪 Đức (DE#187) | `25373` | `25372` | Datacamp Limited | Hoạt động |
+| 21 | `NL` | 🇳🇱 Hà Lan (NL#343) | `25375` | `25374` | Datacamp Limited | Hoạt động |
+| 22 | `FR` | 🇫🇷 Pháp (FR#167) | `25377` | `25376` | Datacamp Limited | Hoạt động |
 
 ---
 
