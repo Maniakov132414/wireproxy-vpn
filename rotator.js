@@ -34,6 +34,32 @@ let currentIndex = 0;
 function parseConfigs() {
   if (!fs.existsSync(CONFIGS_DIR)) return [];
   const files = fs.readdirSync(CONFIGS_DIR).filter(f => f.endsWith('.conf'));
+
+  // Priority Sort: Vietnam & Singapore first (ultra-low latency from Railway SG), then East Asia, then major hubs, then worldwide
+  const priorityPrefixes = [
+    'wireproxy-vn',
+    'wireproxy-sg',
+    'wireproxy-hk',
+    'wireproxy-jp',
+    'wireproxy-tw',
+    'wireproxy-kr',
+    'wireproxy-us',
+    'wireproxy-de',
+    'wireproxy-uk',
+  ];
+
+  files.sort((a, b) => {
+    const aPrio = priorityPrefixes.findIndex(p => a.startsWith(p));
+    const bPrio = priorityPrefixes.findIndex(p => b.startsWith(p));
+    if (aPrio !== -1 && bPrio !== -1) {
+      if (aPrio === bPrio) return a.localeCompare(b);
+      return aPrio - bPrio;
+    }
+    if (aPrio !== -1) return -1;
+    if (bPrio !== -1) return 1;
+    return a.localeCompare(b);
+  });
+
   const nodes = [];
 
   for (const file of files) {
