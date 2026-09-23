@@ -223,7 +223,7 @@ function initPool() {
 }
 
 // HTTP Proxy Handler (No Auth Required)
-const server = http.createServer(async (req, res) => {
+const httpServer = http.createServer(async (req, res) => {
   await forwardHttp(req, res, 0);
 });
 
@@ -277,7 +277,7 @@ async function forwardHttp(req, res, attempt) {
 }
 
 // HTTPS CONNECT Tunnel Handler (No Auth Required)
-server.on('connect', async (req, clientSocket, head) => {
+httpServer.on('connect', async (req, clientSocket, head) => {
   await forwardConnect(req, clientSocket, head, 0);
 });
 
@@ -317,7 +317,7 @@ async function forwardConnect(req, clientSocket, head, attempt) {
   clientSocket.once('close', onConnectDone);
   upstreamSocket.once('close', onConnectDone);
 
-  upstreamSocket.setTimeout(5000);
+  upstreamSocket.setTimeout(15000);
   upstreamSocket.on('timeout', () => {
     upstreamSocket.destroy();
     target.inFlight = Math.max(0, (target.inFlight || 1) - 1);
@@ -331,6 +331,52 @@ async function forwardConnect(req, clientSocket, head, attempt) {
     target.failures = (target.failures || 0) + 1;
     retireAndRotateNode(target);
     forwardConnect(req, clientSocket, head, attempt + 1);
+  });
+}
+
+// SOCKS5 Tunnel Handler (Transparent Forwarding to Node's Socks5 Port)
+async function handleSocks5(clientSocket, initialChunk) {
+  const target = await getOrWarmProxy();
+  if (!target || !target.socksPort) {
+    clientSocket.end();
+    return;
+  }
+
+  target.inFlight = (target.inFlight || 0) + 1;
+  target.servingCount = (target.servingCount || 0) + 1;
+
+  const upstreamSocket = net.connect(target.socksPort, target.host, () => {
+    upstreamSocket.write(initialChunk);
+    clientSocket.pipe(upstreamSocket);
+    upstreamSocket.pipe(clientSocket);
+  });
+
+  let retired = false;
+  function onSocksDone() {
+    if (retired) return;
+    retired = true;
+    target.inFlight = Math.max(0, (target.inFlight || 1) - 1);
+    retireAndRotateNode(target);
+  }
+
+  clientSocket.once('close', onSocksDone);
+  upstreamSocket.once('close', onSocksDone);
+
+  upstreamSocket.setTimeout(15000);
+  upstreamSocket.on('timeout', () => {
+    upstreamSocket.destroy();
+    clientSocket.destroy();
+    onSocksDone();
+  });
+
+  upstreamSocket.on('error', () => {
+    clientSocket.destroy();
+    onSocksDone();
+  });
+
+  clientSocket.on('error', () => {
+    upstreamSocket.destroy();
+    onSocksDone();
   });
 }
 
@@ -351,9 +397,27 @@ setInterval(() => {
   }
 }, 15000);
 
-server.listen(ROTATOR_PORT, BIND_ADDRESS, () => {
+// Master Dual-Protocol Server (Listens on ROTATOR_PORT and auto-sniffs HTTP vs SOCKS5)
+const masterServer = net.createServer((clientSocket) => {
+  clientSocket.once('data', async (chunk) => {
+    if (chunk.length > 0 && chunk[0] === 0x05) {
+      // SOCKS5 protocol detected
+      await handleSocks5(clientSocket, chunk);
+    } else {
+      // HTTP or HTTPS CONNECT protocol detected
+      clientSocket.unshift(chunk);
+      httpServer.emit('connection', clientSocket);
+    }
+  });
+
+  clientSocket.on('error', () => {
+    clientSocket.destroy();
+  });
+});
+
+masterServer.listen(ROTATOR_PORT, BIND_ADDRESS, () => {
   initPool();
-  console.log(` Master Rotating Proxy listening at http://${BIND_ADDRESS}:${ROTATOR_PORT} (NO AUTH REQUIRED)\n`);
+  console.log(` Master Rotating Proxy (DUAL HTTP & SOCKS5) listening at ${BIND_ADDRESS}:${ROTATOR_PORT} (NO AUTH REQUIRED)\n`);
 });
 
 // Watch configs folder for new additions
