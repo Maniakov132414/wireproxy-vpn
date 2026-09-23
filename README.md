@@ -18,7 +18,7 @@ Hệ thống biến các cấu hình WireGuard VPN từ **ProtonVPN Plus** thàn
 
 ## 2. Bảng phân bổ Node & Cổng nội bộ
 
-Hệ thống gồm **22 máy chủ tối ưu hóa độ trễ cho Railway Singapore**:
+Hệ thống gồm **45 máy chủ tối ưu hóa độ trễ tuyệt đối cho Railway Singapore** trải rộng trên **10 quốc gia Đông Nam Á & Đông Á**:
 
 | STT | Node | Quốc gia & Vị trí | Cổng HTTP | Cổng SOCKS5 | Ping tới Railway (SG) | Trạng thái |
 | :-: | :--- | :--- | :-: | :-: | :-: | :-: |
@@ -27,23 +27,46 @@ Hệ thống gồm **22 máy chủ tối ưu hóa độ trễ cho Railway Singap
 | 3 | `SG171` | 🇸🇬 Singapore (SG#171) | `25421` | `25420` | ~2ms | Verified Live |
 | 4 | `SG175` | 🇸🇬 Singapore (SG#175) | `25423` | `25422` | ~2ms | Verified Live |
 | 5 | `SG192` | 🇸🇬 Singapore (SG#192) | `25425` | `25424` | ~2ms | Verified Live |
-| 6 | `VN1` | 🇻🇳 Hà Nội (VN#1) | `25401` | `25400` | ~25ms | Verified Live |
-| 7 | `VN2` | 🇻🇳 Hà Nội (VN#2) | `25403` | `25402` | ~25ms | Verified Live |
-| 8 | `VN3` | 🇻🇳 Hà Nội (VN#3) | `25405` | `25404` | ~25ms | Verified Live |
-| 9 | `VN4` | 🇻🇳 Hà Nội (VN#4) | `25407` | `25406` | ~25ms | Verified Live |
-| 10 | `VN5` | 🇻🇳 Hà Nội (VN#5) | `25409` | `25408` | ~25ms | Verified Live |
-| 11 | `VN6` | 🇻🇳 Hà Nội (VN#6) | `25411` | `25410` | ~25ms | Verified Live |
-| 12 | `VN7` | 🇻🇳 Hà Nội (VN#7) | `25413` | `25412` | ~25ms | Verified Live |
-| 13 | `VN8` | 🇻🇳 Hà Nội (VN#8) | `25415` | `25414` | ~25ms | Verified Live |
-| 14 | `HK29` | 🇭🇰 Hồng Kông (HK#29) | `25437` | `25436` | ~30ms | Verified Live |
-| 15 | `HK35` | 🇭🇰 Hồng Kông (HK#35) | `25439` | `25438` | ~30ms | Verified Live |
-| 16 | `TW13` | 🇹🇼 Đài Bắc (TW#13) | `25441` | `25440` | ~45ms | Verified Live |
-| 17 | `JP188` | 🇯🇵 Tokyo (JP#188) | `25427` | `25426` | ~55ms | Verified Live |
-| 18 | `JP201` | 🇯🇵 Osaka (JP#201) | `25429` | `25428` | ~55ms | Verified Live |
-| 19 | `JP202` | 🇯🇵 Osaka (JP#202) | `25431` | `25430` | ~55ms | Verified Live |
-| 20 | `JP203` | 🇯🇵 Osaka (JP#203) | `25433` | `25432` | ~55ms | Verified Live |
-| 21 | `JP206` | 🇯🇵 Osaka (JP#206) | `25435` | `25434` | ~55ms | Verified Live |
-| 22 | `KR20` | 🇰🇷 Seoul (KR#20) | `25443` | `25442` | ~65ms | Verified Live |
+| 6 | `SG179` | 🇸🇬 Singapore (SG#179) | `25447` | `25446` | ~2ms | Verified Live |
+| 7 | `SG196` | 🇸🇬 Singapore (SG#196) | `25449` | `25448` | ~2ms | Verified Live |
+| 8 | `SG220` | 🇸🇬 Singapore (SG#220) | `25451` | `25450` | ~2ms | Verified Live |
+| 9 | `SG224` | 🇸🇬 Singapore (SG#224) | `25453` | `25452` | ~2ms | Verified Live |
+| 10 | `SG228` | 🇸🇬 Singapore (SG#228) | `25455` | `25454` | ~2ms | Verified Live |
+| 11 | `SG271` | 🇸🇬 Singapore (SG#271) | `25457` | `25456` | ~2ms | Verified Live |
+| 12 | `SG275` | 🇸🇬 Singapore (SG#275) | `25459` | `25458` | ~2ms | Verified Live |
+| 13 | `MY11` | 🇲🇾 Kuala Lumpur (MY#11) | `25461` | `25460` | ~4ms | Verified Live |
+| 14 | `MY15` | 🇲🇾 Kuala Lumpur (MY#15) | `25463` | `25462` | ~4ms | Verified Live |
+| 15 | `MY19` | 🇲🇾 Kuala Lumpur (MY#19) | `25465` | `25464` | ~4ms | Verified Live |
+| 16 | `MY21` | 🇲🇾 Kuala Lumpur (MY#21) | `25467` | `25466` | ~4ms | Verified Live |
+| 17 | `MY25` | 🇲🇾 Kuala Lumpur (MY#25) | `25469` | `25468` | ~4ms | Verified Live |
+| 18 | `ID14` | 🇮🇩 Jakarta (ID#14) | `25445` | `25444` | ~15ms | Verified Live |
+| 19 | `VN1` | 🇻🇳 Hà Nội (VN#1) | `25401` | `25400` | ~25ms | Verified Live |
+| 20 | `VN2` | 🇻🇳 Hà Nội (VN#2) | `25403` | `25402` | ~25ms | Verified Live |
+| 21 | `VN3` | 🇻🇳 Hà Nội (VN#3) | `25405` | `25404` | ~25ms | Verified Live |
+| 22 | `VN4` | 🇻🇳 Hà Nội (VN#4) | `25407` | `25406` | ~25ms | Verified Live |
+| 23 | `VN5` | 🇻🇳 Hà Nội (VN#5) | `25409` | `25408` | ~25ms | Verified Live |
+| 24 | `VN6` | 🇻🇳 Hà Nội (VN#6) | `25411` | `25410` | ~25ms | Verified Live |
+| 25 | `VN7` | 🇻🇳 Hà Nội (VN#7) | `25413` | `25412` | ~25ms | Verified Live |
+| 26 | `VN8` | 🇻🇳 Hà Nội (VN#8) | `25415` | `25414` | ~25ms | Verified Live |
+| 27 | `TH3` | 🇹🇭 Bangkok (TH#3) | `25471` | `25470` | ~25ms | Verified Live |
+| 28 | `TH7` | 🇹🇭 Bangkok (TH#7) | `25473` | `25472` | ~25ms | Verified Live |
+| 29 | `TH12` | 🇹🇭 Bangkok (TH#12) | `25475` | `25474` | ~25ms | Verified Live |
+| 30 | `TH16` | 🇹🇭 Bangkok (TH#16) | `25477` | `25476` | ~25ms | Verified Live |
+| 31 | `HK29` | 🇭🇰 Hồng Kông (HK#29) | `25437` | `25436` | ~30ms | Verified Live |
+| 32 | `HK35` | 🇭🇰 Hồng Kông (HK#35) | `25439` | `25438` | ~30ms | Verified Live |
+| 33 | `HK39` | 🇭🇰 Hồng Kông (HK#39) | `25489` | `25488` | ~30ms | Verified Live |
+| 34 | `PH1` | 🇵🇭 Manila (PH#1) | `25479` | `25478` | ~35ms | Verified Live |
+| 35 | `PH2` | 🇵🇭 Manila (PH#2) | `25481` | `25480` | ~35ms | Verified Live |
+| 36 | `PH3` | 🇵🇭 Manila (PH#3) | `25483` | `25482` | ~35ms | Verified Live |
+| 37 | `PH4` | 🇵🇭 Manila (PH#4) | `25485` | `25484` | ~35ms | Verified Live |
+| 38 | `TW13` | 🇹🇼 Đài Bắc (TW#13) | `25441` | `25440` | ~45ms | Verified Live |
+| 39 | `JP188` | 🇯🇵 Tokyo (JP#188) | `25427` | `25426` | ~55ms | Verified Live |
+| 40 | `JP201` | 🇯🇵 Osaka (JP#201) | `25429` | `25428` | ~55ms | Verified Live |
+| 41 | `JP202` | 🇯🇵 Osaka (JP#202) | `25431` | `25430` | ~55ms | Verified Live |
+| 42 | `JP203` | 🇯🇵 Osaka (JP#203) | `25433` | `25432` | ~55ms | Verified Live |
+| 43 | `JP206` | 🇯🇵 Osaka (JP#206) | `25435` | `25434` | ~55ms | Verified Live |
+| 44 | `KR20` | 🇰🇷 Seoul (KR#20) | `25443` | `25442` | ~65ms | Verified Live |
+| 45 | `KR28` | 🇰🇷 Seoul (KR#28) | `25487` | `25486` | ~65ms | Verified Live |
 
 ---
 

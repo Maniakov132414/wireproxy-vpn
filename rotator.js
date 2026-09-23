@@ -46,7 +46,7 @@ function parseConfigs() {
 
   // Interleave preferred low-latency regions & hubs across the pool so the warm nodes
   // ALWAYS have distinct public IP addresses close to Railway Southeast Asia (Singapore)!
-  const preferredOrder = ['sg', 'vn', 'hk', 'tw', 'jp', 'kr'];
+  const preferredOrder = ['sg', 'my', 'vn', 'th', 'ph', 'id', 'hk', 'tw', 'jp', 'kr'];
   const files = [];
   const maxLen = Math.max(...Object.values(groups).map(g => g.length));
 
