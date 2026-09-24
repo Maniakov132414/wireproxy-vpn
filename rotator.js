@@ -200,8 +200,17 @@ async function startNode(node) {
       return;
     }
 
-    // Actively probe WireGuard tunnel connectivity before exposing to clients!
-    const probe = await probeNodeConnectivity(node.port, node.host, 6000);
+    // Allow WireGuard 800ms to complete initial UDP handshake with remote endpoint
+    await new Promise(r => setTimeout(r, 800));
+
+    // Actively probe WireGuard tunnel connectivity before exposing to clients
+    let probe = await probeNodeConnectivity(node.port, node.host, 5000);
+    if (!probe.ok) {
+      // Retry once after 1s for international undersea cable latency
+      await new Promise(r => setTimeout(r, 1000));
+      probe = await probeNodeConnectivity(node.port, node.host, 5000);
+    }
+
     if (probe.ok) {
       node.active = true;
       node.starting = false;
