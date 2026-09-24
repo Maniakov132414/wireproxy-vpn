@@ -71,6 +71,7 @@ function parseConfigs() {
 
     const httpMatch = content.match(/\[http\][\s\S]*?BindAddress\s*=\s*[\w\.:]+:(\d+)/i);
     const socksMatch = content.match(/\[Socks5\][\s\S]*?BindAddress\s*=\s*[\w\.:]+:(\d+)/i);
+    const keyMatch = content.match(/PrivateKey\s*=\s*([^\r\n]+)/i);
 
     if (httpMatch) {
       const port = parseInt(httpMatch[1], 10);
@@ -83,6 +84,7 @@ function parseConfigs() {
         host: '127.0.0.1',
         port,
         socksPort: socksMatch ? parseInt(socksMatch[1], 10) : null,
+        privateKey: keyMatch ? keyMatch[1].trim() : '',
         process: null,
         active: false,
         starting: false,
@@ -123,20 +125,24 @@ function waitForPort(port, host = '127.0.0.1', timeoutMs = 4500) {
 }
 
 // Actively probe WireGuard tunnel internet connectivity directly via IP (avoids DNS delays)
-function probeNodeConnectivity(port, host = '127.0.0.1', timeoutMs = 5000) {
+function probeNodeConnectivity(port, host = '127.0.0.1', timeoutMs = 6000) {
   return new Promise((resolve) => {
     const req = http.get({
       host,
       port,
-      path: 'http://1.1.1.1/cdn-cgi/trace',
+      path: 'http://api.ipify.org',
       timeout: timeoutMs,
-      headers: { Host: '1.1.1.1' },
+      headers: { Host: 'api.ipify.org', 'User-Agent': 'curl/7.88.1' },
     }, (res) => {
       let body = '';
       res.on('data', chunk => body += chunk);
       res.on('end', () => {
-        const ipMatch = body.match(/ip=([^\r\n]+)/);
-        resolve({ ok: true, ip: ipMatch ? ipMatch[1].trim() : 'live' });
+        const ip = body.trim();
+        if (res.statusCode === 200 && /^\d+\.\d+\.\d+\.\d+$/.test(ip)) {
+          resolve({ ok: true, ip });
+        } else {
+          resolve({ ok: true, ip: 'live' });
+        }
       });
     });
     req.on('error', () => resolve({ ok: false }));
@@ -151,6 +157,14 @@ async function startNode(node) {
   if (node.process || node.starting || node.coolingDown) return;
   // STRICT PROCESS CAP: Never exceed POOL_BUFFER_SIZE under any circumstance
   if (getAliveProcessesCount() >= POOL_BUFFER_SIZE) return;
+
+  // KEY ISOLATION: Never run two nodes with the same PrivateKey concurrently (Proton routing collision)
+  const activeKeys = new Set(
+    ALL_NODES.filter(n => n !== node && (n.process || n.starting)).map(n => n.privateKey).filter(Boolean)
+  );
+  if (node.privateKey && activeKeys.has(node.privateKey)) {
+    return;
+  }
 
   node.starting = true;
 
@@ -187,7 +201,7 @@ async function startNode(node) {
     }
 
     // Actively probe WireGuard tunnel connectivity before exposing to clients!
-    const probe = await probeNodeConnectivity(node.port, node.host, 5000);
+    const probe = await probeNodeConnectivity(node.port, node.host, 6000);
     if (probe.ok) {
       node.active = true;
       node.starting = false;
@@ -308,11 +322,21 @@ async function replenishPool() {
 
   try {
     while (getAliveProcessesCount() < POOL_BUFFER_SIZE) {
-      const dormantNodes = ALL_NODES.filter(n => !n.process && !n.starting && !n.coolingDown);
-      if (dormantNodes.length === 0) break;
+      const activeKeys = new Set(
+        ALL_NODES.filter(n => n.process || n.starting).map(n => n.privateKey).filter(Boolean)
+      );
 
-      // Pick randomly among dormant nodes
-      const candidate = dormantNodes[Math.floor(Math.random() * dormantNodes.length)];
+      const eligibleNodes = ALL_NODES.filter(n =>
+        !n.process &&
+        !n.starting &&
+        !n.coolingDown &&
+        (!n.privateKey || !activeKeys.has(n.privateKey))
+      );
+
+      if (eligibleNodes.length === 0) break;
+
+      // Pick randomly among eligible nodes
+      const candidate = eligibleNodes[Math.floor(Math.random() * eligibleNodes.length)];
       await startNode(candidate);
       // Small pause between node starts to keep CPU smooth
       await new Promise(r => setTimeout(r, 200));
