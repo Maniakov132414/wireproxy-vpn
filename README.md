@@ -7,10 +7,10 @@ Hệ thống biến các cấu hình WireGuard VPN từ **ProtonVPN Plus** thàn
 ## 1. Cơ chế hoạt động & Điểm nổi bật
 
 * **Cổng Master Proxy Đa Giao Thức (`10800`)**: Lắng nghe trên cổng `10800` với cơ chế **Smart Protocol Sniffer**. Tự động phân tích byte đầu tiên để hỗ trợ cả **HTTP/HTTPS CONNECT** và **SOCKS5** trên cùng một cổng duy nhất.
-* **Xoay ngẫu nhiên 5 request / lần (Sticky 5 Requests)**: Mỗi node trực chiến giữ kết nối ổn định cho đúng **5 requests** liên tiếp rồi mới tự động chuyển sang node ngẫu nhiên tiếp theo. Giúp các luồng kiểm tra cookie / phiên đăng nhập hoàn tất trọn vẹn mà không bị nhảy IP giữa chừng khiến Netflix WAF nghi ngờ.
-* **Tối ưu hóa cự ly gần cho Railway Southeast Asia (Singapore)**: Toàn bộ **22 máy chủ** được tuyển chọn 100% nằm trong khu vực Đông Nam Á & Đông Á có kết nối cáp quang trực tiếp tới Singapore: **Singapore (5 node, ping < 3ms)**, **Việt Nam (8 node, ping ~25ms)**, **Hồng Kông (2 node, ping ~30ms)**, **Đài Loan (1 node, ping ~45ms)**, **Nhật Bản (5 node, ping ~55ms)**, **Hàn Quốc (1 node, ping ~65ms)**. Loại bỏ 100% độ trễ xuyên lục địa.
+* **Xoay ngẫu nhiên 3 request / lần (Sticky 3 Requests)**: Mỗi node trực chiến giữ kết nối ổn định cho đúng **3 requests** liên tiếp rồi mới tự động chuyển sang node kế tiếp (ưu tiên node ít tải nhất). Giúp các luồng kiểm tra cookie / phiên đăng nhập hoàn tất trọn vẹn mà không bị nhảy IP giữa chừng khiến Netflix WAF nghi ngờ.
+* **Tối ưu hóa cự ly gần cho Railway Southeast Asia (Singapore)**: Lõi **73 máy chủ** trực chiến tuyển chọn từ khu vực Đông Nam Á & Đông Á có kết nối cáp quang trực tiếp tới Singapore: **Singapore (12 node, ping < 3ms)**, **Việt Nam (12 node, ping ~25ms)**, **Nhật Bản (24 node, ping ~55ms)**, **Malaysia (6 node, ping ~4ms)**, **Hồng Kông (3 node, ping ~30ms)**, Philippines, Thái Lan, Indonesia, Campuchia, Ấn Độ... 18 node EU/US/Oceania còn lại là nhánh dự phòng, luôn đứng cuối hàng đợi xoay.
 * **Chống nghẽn khi spam đa luồng (Anti-Spam & Fast Failover 12s)**: Thời gian chờ bắt tay CONNECT được nâng lên 12 giây, đồng thời nếu node gặp sự cố sẽ lập tức thử lại ngay trên node khác trong pool, không trả lỗi 502/504 vội vàng cho bot.
-* **Hàng đợi đệm sẵn (Pre-warmed Buffer, 7 server)**: Luôn duy trì sẵn 7 máy chủ trực chiến luân phiên. Khi bot chạy 25 luồng, tải được chia đều chỉ ~3-4 luồng / server, đảm bảo mượt mà và không lo nghẽn port.
+* **Hàng đợi đệm sẵn (Pre-warmed Buffer, 8 server)**: Luôn duy trì sẵn 8 máy chủ trực chiến luân phiên (an toàn dưới trần 10 slot thiết bị của Proton). Khi bot chạy 25 luồng, tải được chia đều chỉ ~3-4 luồng / server, đảm bảo mượt mà và không lo nghẽn port.
 * **Tự động ngủ khi không hoạt động (Auto-Sleep 90s)**: Sau 90 giây không có request từ bot, toàn bộ tiến trình Wireproxy sẽ tự động tắt để giải phóng 100% slot thiết bị của Proton. Khi có request mới đến, hệ thống sẽ tự động thức dậy trong 1-2 giây.
 * **Không cần Mật khẩu (No Auth)**: Cổng proxy mở trực tiếp, bot kết nối vào dùng ngay mà không cần cấu hình User/Pass rườm rà.
 
@@ -95,6 +95,26 @@ Hệ thống gồm **91 máy chủ** trải rộng trên 3 nhóm khu vực: **l�
 | 71 | `TW13` | 🇹🇼 Đài Bắc (TW#13) | `25441` | `25440` | ~45ms | Verified Live |
 | 72 | `KR20` | 🇰🇷 Seoul (KR#20) | `25443` | `25442` | ~65ms | Verified Live |
 | 73 | `KR28` | 🇰🇷 Seoul (KR#28) | `25495` | `25494` | ~65ms | Verified Live |
+| 74 | `TW21` | 🇹🇼 Đài Bắc (TW#21) | `25375` | `25374` | ~50ms | Backup |
+| 75 | `AU-109` | 🇦🇺 Sydney (AU#109) | `25345` | `25344` | ~90ms | Backup |
+| 76 | `NZ-20` | 🇳🇿 Auckland (NZ#20) | `25371` | `25370` | ~120ms | Backup |
+| 77 | `DE-187` | 🇩🇪 Frankfurt (DE#187) | `25355` | `25354` | ~180ms | Backup |
+| 78 | `FR-167` | 🇫🇷 Paris (FR#167) | `25363` | `25362` | ~180ms | Backup |
+| 79 | `NL-343` | 🇳🇱 Amsterdam (NL#343) | `25367` | `25366` | ~180ms | Backup |
+| 80 | `BE-43` | 🇧🇪 Brussels (BE#43) | `25347` | `25346` | ~185ms | Backup |
+| 81 | `UK-186` | 🇬🇧 London (UK#186) | `25377` | `25376` | ~190ms | Backup |
+| 82 | `CH-289` | 🇨🇭 Zurich (CH#289) | `25353` | `25352` | ~185ms | Backup |
+| 83 | `IT-19` | 🇮🇹 Milan (IT#19) | `25365` | `25364` | ~185ms | Backup |
+| 84 | `ES-71` | 🇪🇸 Madrid (ES#71) | `25359` | `25358` | ~190ms | Dead - tự loại |
+| 85 | `SE-76` | 🇸🇪 Stockholm (SE#76) | `25373` | `25372` | ~200ms | Backup |
+| 86 | `NO-21` | 🇳🇴 Oslo (NO#21) | `25369` | `25368` | ~200ms | Backup |
+| 87 | `DK-52` | 🇩🇰 Copenhagen (DK#52) | `25357` | `25356` | ~195ms | Backup |
+| 88 | `FI-1` | 🇫🇮 Helsinki (FI#1) | `25361` | `25360` | ~210ms | Dead - tự loại |
+| 89 | `CA-93` | 🇨🇦 Montreal (CA#93) | `25351` | `25350` | ~250ms | Backup |
+| 90 | `US-AZ-84` | 🇺🇸 Phoenix, Arizona (US#84) | `25379` | `25378` | ~230ms | Backup |
+| 91 | `BR-20` | 🇧🇷 São Paulo (BR#20) | `25349` | `25348` | ~320ms | Backup |
+
+*Ghi chú: 18 node từ hàng 74-91 là **nhánh dự phòng mở rộng** - chỉ được khởi động khi cần thêm IP mới, đứng sau toàn bộ node Á Động trong hàng đợi xoay. Hai node `ES-71` và `FI-1` đã chết ở phía Proton, rotator tự phát hiện qua handshake probe và bỏ qua vĩnh viễn.*
 
 ---
 
