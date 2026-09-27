@@ -14,7 +14,7 @@ const STICKY_REQUESTS_PER_NODE = parseInt(process.env.STICKY_REQUESTS || '3', 10
 const MAX_REQUESTS_PER_NODE = parseInt(process.env.MAX_REQUESTS_PER_NODE || '200', 10);
 // Stickiness guard: once a node carries this many concurrent requests, stop
 // sticking new traffic to it so the load spreads across the whole warm pool
-// instead of stampeding one IP into Netflix WAF rate limiting.
+// instead of stampeding one IP into an upstream rate limiter.
 const STICKY_MAX_INFLIGHT = parseInt(process.env.STICKY_MAX_INFLIGHT || '20', 10);
 // No hard concurrency caps: every request is always accepted. New requests are
 // spread with weighted least-loaded balancing, and a rotated-away node stays
@@ -229,9 +229,15 @@ async function startNode(node) {
     if (probe.ok) {
       node.active = true;
       node.starting = false;
+      probeFailures.delete(node.id);
       console.log(`[+] Started ${node.name.padEnd(14)} (Port: ${node.port}) -> Verified Live (${probe.ip})`);
     } else {
       console.warn(`[!] Node ${node.name} failed tunnel handshake probe, bypassing...`);
+      const fails = (probeFailures.get(node.id) || 0) + 1;
+      probeFailures.set(node.id, fails);
+      if (fails >= PROBE_FAIL_LIMIT) {
+        console.warn(`[-] Config ${node.name} parked after ${fails} failed probes this session.`);
+      }
       await stopNode(node);
       // Deprioritize dead node to end of queue so healthy ones run first
       const idx = ALL_NODES.indexOf(node);
@@ -345,6 +351,11 @@ let isReplenishing = false;
 // The idle sweeper must count these, otherwise it can tear the pool down in the
 // window between "node selected" and "inFlight++" and kill a live request.
 let pendingCount = 0;
+// Configs that repeatedly fail the startup tunnel probe are almost always dead
+// endpoints (not transient). Retrying them burns Proton device slots and
+// triggers the retire->spawn churn that shrinks the live pool, so park them.
+const PROBE_FAIL_LIMIT = 3;
+const probeFailures = new Map();
 
 // Sequential replenishment loop: guarantees NO thundering herd, NO OOM, strict cap
 async function replenishPool() {
@@ -361,6 +372,7 @@ async function replenishPool() {
         !n.process &&
         !n.starting &&
         !n.coolingDown &&
+        (probeFailures.get(n.id) || 0) < PROBE_FAIL_LIMIT &&
         (!n.privateKey || !activeKeys.has(n.privateKey))
       );
 
@@ -404,6 +416,15 @@ function waitForHealthyNode(timeoutMs = 12000) {
   });
 }
 
+// Strict least-loaded pick with a small random tiebreak. Target-agnostic:
+// spreading requests evenly across all exit IPs is what keeps ANY upstream
+// (Netflix, other sites, bots) from rate-limiting a single IP.
+function pickLeastLoaded(candidates) {
+  const sorted = candidates.slice().sort((a, b) => (a.inFlight || 0) - (b.inFlight || 0));
+  const pool = sorted.slice(0, Math.min(3, sorted.length));
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
 async function getOrWarmProxy() {
   lastActivityTime = Date.now();
   let healthy = ALL_NODES.filter(p => p.process && p.active && !p.markedForRetire);
@@ -422,26 +443,22 @@ async function getOrWarmProxy() {
     }
   }
 
-  // Sticky for STICKY_REQUESTS_PER_NODE requests: keeps cookie check sessions
-  // stable. The count gates WHEN rotation happens, never whether a request is
-  // accepted - under a thread storm every request still gets a node instantly.
-  // A saturated node loses stickiness immediately so new traffic steers away.
+  // Sticky for STICKY_REQUESTS_PER_NODE requests: keeps sessions that benefit
+  // from IP stability short-lived but predictable. The count gates WHEN
+  // rotation happens, never whether a request is accepted - under a thread
+  // storm every request still gets a node instantly. A saturated node loses
+  // stickiness so new traffic steers away.
   if (currentStickyNode && currentStickyNode.process && currentStickyNode.active && !currentStickyNode.markedForRetire && currentStickyCount < STICKY_REQUESTS_PER_NODE && (currentStickyNode.inFlight || 0) < STICKY_MAX_INFLIGHT) {
     currentStickyCount++;
     return currentStickyNode;
   }
 
-  // Rotation time: strict least-loaded pick (random tiebreak among the lightest
-  // few). Under a 45-thread storm this spreads requests far more evenly than a
-  // purely random roll, keeping every wireproxy IP below Netflix's per-IP WAF
-  // threshold. Nothing is ever refused - this only steers new traffic.
+  // Rotation time: strict least-loaded pick (target-agnostic - works for any
+  // upstream site). The previous node keeps its port and process open:
+  // existing tunnels drain naturally, and it stays warm in the pool.
   const nonSticky = healthy.filter(n => n !== currentStickyNode);
   const candidates = nonSticky.length > 0 ? nonSticky : healthy;
-  const sorted = candidates.slice().sort((a, b) => (a.inFlight || 0) - (b.inFlight || 0));
-  const pool = sorted.slice(0, Math.min(3, sorted.length));
-  const pick = pool[Math.floor(Math.random() * pool.length)];
-  // The previous node keeps its port and process open: existing tunnels drain
-  // naturally, and it stays warm in the pool for future rotation cycles.
+  const pick = pickLeastLoaded(candidates);
   currentStickyNode = pick;
   currentStickyCount = 1;
   return pick;
@@ -460,7 +477,7 @@ function initPool() {
   console.log(` Total Configs:    ${ALL_NODES.length} servers`);
   console.log(` Warm Buffer:      ${POOL_BUFFER_SIZE} servers pre-warmed & ready`);
   console.log(` Max Per Node:     ${MAX_REQUESTS_PER_NODE} requests`);
-  console.log(` Balancing:        unlimited requests, weighted least-loaded spread`);
+  console.log(` Balancing:        unlimited requests, least-loaded spread`);
   console.log(` Idle Timeout:     ${Math.round(IDLE_TIMEOUT_MS / 1000)}s auto-sleep (wake burst: ${WAKE_BURST})`);
   console.log(` Authentication:   None (Public / Open for Bot)`);
   console.log(`==========================================================\n`);
@@ -503,8 +520,9 @@ async function forwardHttp(req, res, attempt) {
   function done(isErr, waf = false) {
     if (finished) return;
     finished = true;
-    // A Netflix 403/429 means the exit IP is WAF-banned, not flaky: weight it
-    // double so the node retires after ~3 bans instead of 5 slow failures.
+    // A 403/429 from upstream means this exit IP is being rate-limited or
+    // blocked, not flaky: weight it double so the node retires after ~3 hits
+    // instead of 5 slow failures. Generic HTTP semantics - applies to any site.
     handleRequestDone(target, isErr, waf ? 2 : 1);
   }
 
@@ -522,9 +540,10 @@ async function forwardHttp(req, res, attempt) {
   let responseStarted = false;
   const proxyReq = http.request(options, (proxyRes) => {
     responseStarted = true;
-    // Netflix WAF throttling (403/429) means this IP is burning out: count it
-    // as a node failure so the rotator steers traffic away and retires the
-    // node after a few consecutive hits, instead of feeding it more requests.
+    // Upstream WAF/rate-limit answers (403/429) mean this IP is burning out:
+    // count it as a node failure so the rotator steers traffic away and
+    // retires the node after a few consecutive hits, instead of feeding it
+    // more requests. Works for any target site, not one specific upstream.
     const wafHit = proxyRes.statusCode === 403 || proxyRes.statusCode === 429;
     if (!wafHit) target.failures = 0;
     res.writeHead(proxyRes.statusCode, proxyRes.headers);
@@ -671,9 +690,9 @@ async function forwardConnect(req, clientSocket, head, attempt) {
   clientSocket.once('close', () => done(false));
   upstreamSocket.once('close', () => done(false));
 
-  // Inactivity reap: a healthy Netflix check writes within a second of the
-  // CONNECT handshake. 9s of silence means the node's exit is stuck - kill the
-  // tunnel and count it as a failure before the bot's own 10s timeout does.
+  // Inactivity reap: a healthy client writes within a second of the CONNECT
+  // handshake. 9s of silence means the node's exit is stuck - kill the tunnel
+  // and count it as a failure before a typical 10s client timeout does.
   upstreamSocket.setTimeout(9000);
   upstreamSocket.on('timeout', () => {
     try { upstreamSocket.destroy(); } catch (e) {}
@@ -740,7 +759,13 @@ async function handleSocks5(clientSocket, initialChunk) {
   });
 }
 
-// Periodic rolling replacement: Every 45s, retire the oldest idle node so the pool rotates through all 73 catalog servers over time
+// Periodic rolling replacement: retire the busiest idle node and spin up a
+// fresh catalog config so the pool cycles IPs over long runs. The interval is
+// deliberately long: Proton device slots take time to free server-side, and
+// killing nodes every few seconds caused a spawn->probe-fail->spawn churn that
+// collapsed the live pool to 3-4 nodes (fewer live IPs = more requests per IP
+// = rate-limit errors on any upstream).
+const ROLLING_REPLACE_MS = parseInt(process.env.ROLLING_REPLACE_MS || '300000', 10);
 setInterval(async () => {
   const activeNodes = ALL_NODES.filter(n => n.process && n.active && !n.markedForRetire && n.inFlight === 0);
   if (activeNodes.length >= POOL_BUFFER_SIZE) {
@@ -752,7 +777,7 @@ setInterval(async () => {
   } else {
     replenishPool();
   }
-}, 45000);
+}, ROLLING_REPLACE_MS);
 
 // Background idle sweeper: If system is idle for IDLE_TIMEOUT_MS, put WireGuard instances to sleep
 // to free the Proton device slot 100% so you can use Proton on phone/PC without collision!
