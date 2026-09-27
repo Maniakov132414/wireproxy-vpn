@@ -7,8 +7,9 @@ const { spawn } = require('child_process');
 const CONFIGS_DIR = path.join(__dirname, 'configs');
 
 // Configuration
-// Hard Pool Buffer Size: 5 warm instances. Uses only 5 slots, perfectly safe under Proton's 10 limit & Railway 512MB RAM
-const POOL_BUFFER_SIZE = parseInt(process.env.POOL_SIZE || '5', 10);
+// Hard Pool Buffer Size: 8 warm instances. Safe under Proton's 10-device limit;
+// each wireproxy process costs ~15-20MB RAM so 8 nodes need ~160MB of the container budget.
+const POOL_BUFFER_SIZE = parseInt(process.env.POOL_SIZE || '8', 10);
 const STICKY_REQUESTS_PER_NODE = parseInt(process.env.STICKY_REQUESTS || '3', 10);
 const MAX_REQUESTS_PER_NODE = parseInt(process.env.MAX_REQUESTS_PER_NODE || '200', 10);
 const IDLE_TIMEOUT_MS = parseInt(process.env.IDLE_TIMEOUT_MS || '90000', 10);

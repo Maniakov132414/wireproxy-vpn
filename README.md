@@ -116,7 +116,7 @@ Các biến môi trường có thể tùy chỉnh trong tab **Variables**:
 
 | Tên biến | Mặc định | Ý nghĩa |
 | :--- | :---: | :--- |
-| `POOL_SIZE` | `6` | Số lượng server luôn được giữ ấm (khuyên dùng 6 để an toàn dưới trần 10 slot của Proton) |
+| `POOL_SIZE` | `8` | Số lượng server luôn được giữ ấm (khuyên dùng 8 để an toàn dưới trần 10 slot của Proton) |
 | `MAX_REQUESTS_PER_NODE` | `60` | Số lượt request tối đa trước khi xoay node |
 | `IDLE_TIMEOUT_MS` | `90000` | Thời gian không có request (90s) để đưa hệ thống vào chế độ ngủ tiết kiệm slot |
 
