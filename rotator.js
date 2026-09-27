@@ -12,6 +12,10 @@ const CONFIGS_DIR = path.join(__dirname, 'configs');
 const POOL_BUFFER_SIZE = parseInt(process.env.POOL_SIZE || '8', 10);
 const STICKY_REQUESTS_PER_NODE = parseInt(process.env.STICKY_REQUESTS || '3', 10);
 const MAX_REQUESTS_PER_NODE = parseInt(process.env.MAX_REQUESTS_PER_NODE || '200', 10);
+// Stickiness guard: once a node carries this many concurrent requests, stop
+// sticking new traffic to it so the load spreads across the whole warm pool
+// instead of stampeding one IP into Netflix WAF rate limiting.
+const STICKY_MAX_INFLIGHT = parseInt(process.env.STICKY_MAX_INFLIGHT || '20', 10);
 // No hard concurrency caps: every request is always accepted. New requests are
 // spread with weighted least-loaded balancing, and a rotated-away node stays
 // alive until its in-flight requests finish (graceful drain on retirement).
@@ -421,24 +425,21 @@ async function getOrWarmProxy() {
   // Sticky for STICKY_REQUESTS_PER_NODE requests: keeps cookie check sessions
   // stable. The count gates WHEN rotation happens, never whether a request is
   // accepted - under a thread storm every request still gets a node instantly.
-  if (currentStickyNode && currentStickyNode.process && currentStickyNode.active && !currentStickyNode.markedForRetire && currentStickyCount < STICKY_REQUESTS_PER_NODE) {
+  // A saturated node loses stickiness immediately so new traffic steers away.
+  if (currentStickyNode && currentStickyNode.process && currentStickyNode.active && !currentStickyNode.markedForRetire && currentStickyCount < STICKY_REQUESTS_PER_NODE && (currentStickyNode.inFlight || 0) < STICKY_MAX_INFLIGHT) {
     currentStickyCount++;
     return currentStickyNode;
   }
 
-  // Rotation time: pick the next node weighted by current load (lightest wins
-  // most often) so a thread storm spreads itself instead of stampeding one
-  // wireproxy process. Nothing is ever refused - this only steers new traffic.
+  // Rotation time: strict least-loaded pick (random tiebreak among the lightest
+  // few). Under a 45-thread storm this spreads requests far more evenly than a
+  // purely random roll, keeping every wireproxy IP below Netflix's per-IP WAF
+  // threshold. Nothing is ever refused - this only steers new traffic.
   const nonSticky = healthy.filter(n => n !== currentStickyNode);
   const candidates = nonSticky.length > 0 ? nonSticky : healthy;
-  const weights = candidates.map(n => 1 / (1 + (n.inFlight || 0)));
-  const total = weights.reduce((a, b) => a + b, 0);
-  let roll = Math.random() * total;
-  let pick = candidates[candidates.length - 1];
-  for (let i = 0; i < candidates.length; i++) {
-    roll -= weights[i];
-    if (roll <= 0) { pick = candidates[i]; break; }
-  }
+  const sorted = candidates.slice().sort((a, b) => (a.inFlight || 0) - (b.inFlight || 0));
+  const pool = sorted.slice(0, Math.min(3, sorted.length));
+  const pick = pool[Math.floor(Math.random() * pool.length)];
   // The previous node keeps its port and process open: existing tunnels drain
   // naturally, and it stays warm in the pool for future rotation cycles.
   currentStickyNode = pick;
@@ -507,15 +508,21 @@ async function forwardHttp(req, res, attempt) {
     path: req.url,
     method: req.method,
     headers: req.headers,
-    timeout: 25000,
+    // 8.5s < the checker's typical 10s read timeout: a hung node is abandoned
+    // and retried on another node while the client is still waiting.
+    timeout: 8500,
   };
 
   const proxyReq = http.request(options, (proxyRes) => {
-    target.failures = 0;
+    // Netflix WAF throttling (403/429) means this IP is burning out: count it
+    // as a node failure so the rotator steers traffic away and retires the
+    // node after a few consecutive hits, instead of feeding it more requests.
+    const wafHit = proxyRes.statusCode === 403 || proxyRes.statusCode === 429;
+    if (!wafHit) target.failures = 0;
     res.writeHead(proxyRes.statusCode, proxyRes.headers);
     proxyRes.pipe(res);
 
-    res.on('finish', () => done(false));
+    res.on('finish', () => done(wafHit));
   });
 
   proxyReq.on('timeout', () => {
