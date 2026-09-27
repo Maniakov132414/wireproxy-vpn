@@ -18,7 +18,7 @@ Hệ thống biến các cấu hình WireGuard VPN từ **ProtonVPN Plus** thàn
 
 ## 2. Bảng phân bổ Node & Cổng nội bộ
 
-Hệ thống gồm **73 máy chủ tối ưu hóa độ trễ tuyệt đối cho Railway Singapore** trải rộng trên **14 quốc gia Đông Nam Á, Đông Á & Nam Á** (Bao gồm **toàn bộ 24 server Nhật Bản**, **toàn bộ 12 server Việt Nam** và **toàn bộ 12 server Singapore**):
+Hệ thống gồm **91 máy chủ** trải rộng trên 3 nhóm khu vực: **lõi Đông Nam Á / Đông Á gần Railway Singapore** (Singapore, Việt Nam, Nhật Bản, Hồng Kông, Đài Loan, Hàn Quốc... ưu tiên xoay trước nhờ độ trễ thấp) và **nhánh mở rộng EU / US / Oceanic** (Đức, Pháp, Hà Lan, Anh, Mỹ, Úc... tự động đứng cuối hàng ưu tiên, chỉ được gọi khi cần thêm IP mới):
 
 | STT | Node | Quốc gia & Vị trí | Cổng HTTP | Cổng SOCKS5 | Ping tới Railway (SG) | Trạng thái |
 | :-: | :--- | :--- | :-: | :-: | :-: | :-: |
@@ -117,8 +117,11 @@ Các biến môi trường có thể tùy chỉnh trong tab **Variables**:
 | Tên biến | Mặc định | Ý nghĩa |
 | :--- | :---: | :--- |
 | `POOL_SIZE` | `8` | Số lượng server luôn được giữ ấm (khuyên dùng 8 để an toàn dưới trần 10 slot của Proton) |
-| `MAX_REQUESTS_PER_NODE` | `60` | Số lượt request tối đa trước khi xoay node |
+| `STICKY_REQUESTS` | `3` | Số request dính vào một node trước khi xoay sang node kế tiếp |
+| `MAX_REQUESTS_PER_NODE` | `200` | Số lượt phục vụ trước khi node nghỉ (drain: chờ request đang chạy xong mới tắt) |
 | `IDLE_TIMEOUT_MS` | `90000` | Thời gian không có request (90s) để đưa hệ thống vào chế độ ngủ tiết kiệm slot |
+
+**Cơ chế chịu tải cao (thread storm)**: Không có giới hạn request cứng nào - mọi request đều được nhận ngay lập tức. Sau mỗi 3 request hệ thống xoay sang node kế tiếp, chọn theo trọng số **ít tải nhất trước** để 100 luồng tự trải đều thay vì dồn vào một node. Khi node bị nghỉ việc (lỗi 5 lần liên tiếp hoặc hết hạn 200 lượt), node đó **vẫn mở port cho tới khi các request đang chạy hoàn tất** (graceful drain) rồi mới tắt.
 
 ---
 

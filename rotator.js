@@ -12,6 +12,9 @@ const CONFIGS_DIR = path.join(__dirname, 'configs');
 const POOL_BUFFER_SIZE = parseInt(process.env.POOL_SIZE || '8', 10);
 const STICKY_REQUESTS_PER_NODE = parseInt(process.env.STICKY_REQUESTS || '3', 10);
 const MAX_REQUESTS_PER_NODE = parseInt(process.env.MAX_REQUESTS_PER_NODE || '200', 10);
+// No hard concurrency caps: every request is always accepted. New requests are
+// spread with weighted least-loaded balancing, and a rotated-away node stays
+// alive until its in-flight requests finish (graceful drain on retirement).
 const IDLE_TIMEOUT_MS = parseInt(process.env.IDLE_TIMEOUT_MS || '90000', 10);
 const ROTATOR_PORT = parseInt(process.env.ROTATOR_PORT || process.env.PORT || '10800', 10);
 const BIND_ADDRESS = process.env.BIND_ADDRESS || '0.0.0.0';
@@ -302,14 +305,17 @@ function handleRequestDone(target, isError = false) {
       currentStickyNode = null;
       currentStickyCount = 0;
     }
-    // Only retire if repeated upstream failures occur and no active requests remain
-    if (target.failures >= 5 && target.inFlight === 0) {
-      console.warn(`[!] Node ${target.name} hit 5 consecutive upstream errors, rotating...`);
+    // Retire as soon as the failure threshold trips, even with requests still in
+    // flight (markedForRetire stops new assignments; the drain path stops the
+    // process once the last request finishes). Under sustained load inFlight never
+    // reaches 0, so gating on it here would let a dying node serve errors forever.
+    if (target.failures >= 5) {
+      console.warn(`[!] Node ${target.name} hit ${target.failures} consecutive upstream errors, rotating...`);
       retireAndRotateNode(target);
     }
   } else {
     target.failures = 0;
-    if ((target.servingCount || 0) >= MAX_REQUESTS_PER_NODE && target.inFlight === 0) {
+    if ((target.servingCount || 0) >= MAX_REQUESTS_PER_NODE && !target.markedForRetire) {
       retireAndRotateNode(target);
     }
   }
@@ -390,19 +396,32 @@ async function getOrWarmProxy() {
     }
   }
 
-  // Sticky 3 requests per node: keeps cookie check sessions stable and prevents abrupt IP jumping!
+  // Sticky for STICKY_REQUESTS_PER_NODE requests: keeps cookie check sessions
+  // stable. The count gates WHEN rotation happens, never whether a request is
+  // accepted - under a thread storm every request still gets a node instantly.
   if (currentStickyNode && currentStickyNode.process && currentStickyNode.active && !currentStickyNode.markedForRetire && currentStickyCount < STICKY_REQUESTS_PER_NODE) {
     currentStickyCount++;
     return currentStickyNode;
   }
 
-  // After STICKY_REQUESTS_PER_NODE requests, pick a new random node from the healthy warm pool
-  let candidates = healthy.filter(n => n !== currentStickyNode);
-  if (candidates.length === 0) candidates = healthy;
-  const randomIndex = Math.floor(Math.random() * candidates.length);
-  currentStickyNode = candidates[randomIndex];
+  // Rotation time: pick the next node weighted by current load (lightest wins
+  // most often) so a thread storm spreads itself instead of stampeding one
+  // wireproxy process. Nothing is ever refused - this only steers new traffic.
+  const nonSticky = healthy.filter(n => n !== currentStickyNode);
+  const candidates = nonSticky.length > 0 ? nonSticky : healthy;
+  const weights = candidates.map(n => 1 / (1 + (n.inFlight || 0)));
+  const total = weights.reduce((a, b) => a + b, 0);
+  let roll = Math.random() * total;
+  let pick = candidates[candidates.length - 1];
+  for (let i = 0; i < candidates.length; i++) {
+    roll -= weights[i];
+    if (roll <= 0) { pick = candidates[i]; break; }
+  }
+  // The previous node keeps its port and process open: existing tunnels drain
+  // naturally, and it stays warm in the pool for future rotation cycles.
+  currentStickyNode = pick;
   currentStickyCount = 1;
-  return currentStickyNode;
+  return pick;
 }
 
 function initPool() {
@@ -418,6 +437,7 @@ function initPool() {
   console.log(` Total Configs:    ${ALL_NODES.length} servers`);
   console.log(` Warm Buffer:      ${POOL_BUFFER_SIZE} servers pre-warmed & ready`);
   console.log(` Max Per Node:     ${MAX_REQUESTS_PER_NODE} requests`);
+  console.log(` Balancing:        unlimited requests, weighted least-loaded spread`);
   console.log(` Idle Timeout:     ${Math.round(IDLE_TIMEOUT_MS / 1000)}s auto-sleep`);
   console.log(` Authentication:   None (Public / Open for Bot)`);
   console.log(`==========================================================\n`);
