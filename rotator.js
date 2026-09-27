@@ -15,7 +15,14 @@ const MAX_REQUESTS_PER_NODE = parseInt(process.env.MAX_REQUESTS_PER_NODE || '200
 // No hard concurrency caps: every request is always accepted. New requests are
 // spread with weighted least-loaded balancing, and a rotated-away node stays
 // alive until its in-flight requests finish (graceful drain on retirement).
-const IDLE_TIMEOUT_MS = parseInt(process.env.IDLE_TIMEOUT_MS || '90000', 10);
+// Idle sleep defaults to 5 minutes: back-to-back checker bursts (minutes apart)
+// keep hitting a warm pool instead of waking a cold one and eating the client's
+// 10s timeout on the first 1-2 requests.
+const IDLE_TIMEOUT_MS = parseInt(process.env.IDLE_TIMEOUT_MS || '300000', 10);
+// Cold-start burst: when the whole pool is asleep, spawn this many nodes in
+// parallel so the first request after idle sleep gets a live tunnel in ~2-4s
+// instead of 8s+ (sequential startup made burst #1 time out).
+const WAKE_BURST = parseInt(process.env.WAKE_BURST || '3', 10);
 const ROTATOR_PORT = parseInt(process.env.ROTATOR_PORT || process.env.PORT || '10800', 10);
 const BIND_ADDRESS = process.env.BIND_ADDRESS || '0.0.0.0';
 
@@ -204,15 +211,15 @@ async function startNode(node) {
       return;
     }
 
-    // Allow WireGuard 800ms to complete initial UDP handshake with remote endpoint
-    await new Promise(r => setTimeout(r, 800));
+    // Allow WireGuard 500ms to complete initial UDP handshake with remote endpoint
+    await new Promise(r => setTimeout(r, 500));
 
     // Actively probe WireGuard tunnel connectivity before exposing to clients
-    let probe = await probeNodeConnectivity(node.port, node.host, 5000);
+    let probe = await probeNodeConnectivity(node.port, node.host, 3500);
     if (!probe.ok) {
-      // Retry once after 1s for international undersea cable latency
-      await new Promise(r => setTimeout(r, 1000));
-      probe = await probeNodeConnectivity(node.port, node.host, 5000);
+      // Retry once after 500ms for international undersea cable latency
+      await new Promise(r => setTimeout(r, 500));
+      probe = await probeNodeConnectivity(node.port, node.host, 3500);
     }
 
     if (probe.ok) {
@@ -330,6 +337,10 @@ let lastActivityTime = Date.now();
 let currentStickyNode = null;
 let currentStickyCount = 0;
 let isReplenishing = false;
+// Requests that entered the handler but have not been assigned a node yet.
+// The idle sweeper must count these, otherwise it can tear the pool down in the
+// window between "node selected" and "inFlight++" and kill a live request.
+let pendingCount = 0;
 
 // Sequential replenishment loop: guarantees NO thundering herd, NO OOM, strict cap
 async function replenishPool() {
@@ -350,6 +361,15 @@ async function replenishPool() {
       );
 
       if (eligibleNodes.length === 0) break;
+
+      // Cold start (whole pool asleep): launch a small parallel burst instead of
+      // one-by-one, so the first request after idle sleep waits ~2-4s for a live
+      // tunnel rather than 8s+. Steady-state top-ups stay sequential.
+      if (getAliveProcessesCount() === 0) {
+        const burst = eligibleNodes.slice(0, Math.min(WAKE_BURST, POOL_BUFFER_SIZE));
+        await Promise.all(burst.map(n => startNode(n)));
+        if (ALL_NODES.some(n => n.process && n.active)) continue;
+      }
 
       // Pick randomly among eligible nodes
       const candidate = eligibleNodes[Math.floor(Math.random() * eligibleNodes.length)];
@@ -387,7 +407,9 @@ async function getOrWarmProxy() {
   // If no healthy nodes exist right now, wait for pool to spin up (prevents spawning burst!)
   if (healthy.length === 0) {
     replenishPool(); // Make sure replenishment is running
-    await waitForHealthyNode(12000);
+    // 9.5s < the typical 10s client read timeout: fail fast with a clean 503 the
+    // bot can retry, instead of hanging until the client itself gives up.
+    await waitForHealthyNode(9500);
     healthy = ALL_NODES.filter(p => p.process && p.active && !p.markedForRetire);
     if (healthy.length === 0) {
       const anyLive = ALL_NODES.find(p => p.process && p.active);
@@ -438,7 +460,7 @@ function initPool() {
   console.log(` Warm Buffer:      ${POOL_BUFFER_SIZE} servers pre-warmed & ready`);
   console.log(` Max Per Node:     ${MAX_REQUESTS_PER_NODE} requests`);
   console.log(` Balancing:        unlimited requests, weighted least-loaded spread`);
-  console.log(` Idle Timeout:     ${Math.round(IDLE_TIMEOUT_MS / 1000)}s auto-sleep`);
+  console.log(` Idle Timeout:     ${Math.round(IDLE_TIMEOUT_MS / 1000)}s auto-sleep (wake burst: ${WAKE_BURST})`);
   console.log(` Authentication:   None (Public / Open for Bot)`);
   console.log(`==========================================================\n`);
 
@@ -447,7 +469,12 @@ function initPool() {
 
 // HTTP Proxy Handler (No Auth Required)
 const httpServer = http.createServer(async (req, res) => {
-  await forwardHttp(req, res, 0);
+  pendingCount++;
+  try {
+    await forwardHttp(req, res, 0);
+  } finally {
+    pendingCount--;
+  }
 });
 
 async function forwardHttp(req, res, attempt) {
@@ -521,7 +548,12 @@ async function forwardHttp(req, res, attempt) {
 
 // HTTPS CONNECT Tunnel Handler (No Auth Required)
 httpServer.on('connect', async (req, clientSocket, head) => {
-  await forwardConnect(req, clientSocket, head, 0);
+  pendingCount++;
+  try {
+    await forwardConnect(req, clientSocket, head, 0);
+  } finally {
+    pendingCount--;
+  }
 });
 
 async function forwardConnect(req, clientSocket, head, attempt) {
@@ -550,6 +582,8 @@ async function forwardConnect(req, clientSocket, head, attempt) {
     handleRequestDone(target, isErr);
   }
 
+  // 8s < the 10s client timeout: leaves ~2s for the retry attempt to still
+  // succeed before the bot gives up, instead of hanging past its limit.
   let connectTimer = setTimeout(() => {
     if (!finished) {
       try { upstreamSocket.destroy(); } catch (e) {}
@@ -563,7 +597,7 @@ async function forwardConnect(req, clientSocket, head, attempt) {
         } catch (e) {}
       }
     }
-  }, 12000);
+  }, 8000);
 
   const upstreamSocket = net.connect(target.port, target.host);
 
@@ -700,7 +734,7 @@ setInterval(() => {
   const idleDuration = Date.now() - lastActivityTime;
   const inFlightCount = ALL_NODES.reduce((sum, n) => sum + (n.inFlight || 0), 0);
 
-  if (idleDuration >= IDLE_TIMEOUT_MS && inFlightCount === 0) {
+  if (idleDuration >= IDLE_TIMEOUT_MS && inFlightCount === 0 && pendingCount === 0) {
     const activeNodes = ALL_NODES.filter(n => n.process && n.active);
     if (activeNodes.length > 0) {
       console.log(`[Idle Sleep] Inactive for ${Math.round(idleDuration / 1000)}s. Shutting down active WireGuard nodes to free Proton device slot...`);

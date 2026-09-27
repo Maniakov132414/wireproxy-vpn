@@ -11,7 +11,7 @@ Hệ thống biến các cấu hình WireGuard VPN từ **ProtonVPN Plus** thàn
 * **Tối ưu hóa cự ly gần cho Railway Southeast Asia (Singapore)**: Lõi **73 máy chủ** trực chiến tuyển chọn từ khu vực Đông Nam Á & Đông Á có kết nối cáp quang trực tiếp tới Singapore: **Singapore (12 node, ping < 3ms)**, **Việt Nam (12 node, ping ~25ms)**, **Nhật Bản (24 node, ping ~55ms)**, **Malaysia (6 node, ping ~4ms)**, **Hồng Kông (3 node, ping ~30ms)**, Philippines, Thái Lan, Indonesia, Campuchia, Ấn Độ... 18 node EU/US/Oceania còn lại là nhánh dự phòng, luôn đứng cuối hàng đợi xoay.
 * **Chống nghẽn khi spam đa luồng (Anti-Spam & Fast Failover 12s)**: Thời gian chờ bắt tay CONNECT được nâng lên 12 giây, đồng thời nếu node gặp sự cố sẽ lập tức thử lại ngay trên node khác trong pool, không trả lỗi 502/504 vội vàng cho bot.
 * **Hàng đợi đệm sẵn (Pre-warmed Buffer, 8 server)**: Luôn duy trì sẵn 8 máy chủ trực chiến luân phiên (an toàn dưới trần 10 slot thiết bị của Proton). Khi bot chạy 25 luồng, tải được chia đều chỉ ~3-4 luồng / server, đảm bảo mượt mà và không lo nghẽn port.
-* **Tự động ngủ khi không hoạt động (Auto-Sleep 90s)**: Sau 90 giây không có request từ bot, toàn bộ tiến trình Wireproxy sẽ tự động tắt để giải phóng 100% slot thiết bị của Proton. Khi có request mới đến, hệ thống sẽ tự động thức dậy trong 1-2 giây.
+* **Tự động ngủ khi không hoạt động (Auto-Sleep 5 phút + Wake Burst 3 node)**: Sau 5 phút không có request từ bot, toàn bộ tiến trình Wireproxy sẽ tự động tắt để giải phóng 100% slot thiết bị của Proton. Khi có request mới đến, hệ thống khởi động **song song 3 node** cùng lúc (thay vì lần lượt) nên tunnel sống lại chỉ trong 2-4 giây - request đầu tiên không còn bị read timeout.
 * **Không cần Mật khẩu (No Auth)**: Cổng proxy mở trực tiếp, bot kết nối vào dùng ngay mà không cần cấu hình User/Pass rườm rà.
 
 ---
@@ -139,7 +139,8 @@ Các biến môi trường có thể tùy chỉnh trong tab **Variables**:
 | `POOL_SIZE` | `8` | Số lượng server luôn được giữ ấm (khuyên dùng 8 để an toàn dưới trần 10 slot của Proton) |
 | `STICKY_REQUESTS` | `3` | Số request dính vào một node trước khi xoay sang node kế tiếp |
 | `MAX_REQUESTS_PER_NODE` | `200` | Số lượt phục vụ trước khi node nghỉ (drain: chờ request đang chạy xong mới tắt) |
-| `IDLE_TIMEOUT_MS` | `90000` | Thời gian không có request (90s) để đưa hệ thống vào chế độ ngủ tiết kiệm slot |
+| `IDLE_TIMEOUT_MS` | `300000` | Thời gian không có request (5 phút) để đưa hệ thống vào chế độ ngủ tiết kiệm slot |
+| `WAKE_BURST` | `3` | Số node khởi động **song song** khi toàn bộ pool đang ngủ (giúp request đầu tiên sau khi thức dậy không bị timeout) |
 
 **Cơ chế chịu tải cao (thread storm)**: Không có giới hạn request cứng nào - mọi request đều được nhận ngay lập tức. Sau mỗi 3 request hệ thống xoay sang node kế tiếp, chọn theo trọng số **ít tải nhất trước** để 100 luồng tự trải đều thay vì dồn vào một node. Khi node bị nghỉ việc (lỗi 5 lần liên tiếp hoặc hết hạn 200 lượt), node đó **vẫn mở port cho tới khi các request đang chạy hoàn tất** (graceful drain) rồi mới tắt.
 
