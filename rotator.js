@@ -307,10 +307,10 @@ async function retireAndRotateNode(usedNode) {
   replenishPool();
 }
 
-function handleRequestDone(target, isError = false) {
+function handleRequestDone(target, isError = false, failureWeight = 1) {
   target.inFlight = Math.max(0, (target.inFlight || 1) - 1);
   if (isError) {
-    target.failures = (target.failures || 0) + 1;
+    target.failures = (target.failures || 0) + failureWeight;
     // If the current sticky node failed, reset stickiness so retries jump to another node
     if (currentStickyNode === target) {
       currentStickyNode = null;
@@ -320,7 +320,7 @@ function handleRequestDone(target, isError = false) {
     // flight (markedForRetire stops new assignments; the drain path stops the
     // process once the last request finishes). Under sustained load inFlight never
     // reaches 0, so gating on it here would let a dying node serve errors forever.
-    if (target.failures >= 5) {
+    if (target.failures >= 5 && !target.markedForRetire) {
       console.warn(`[!] Node ${target.name} hit ${target.failures} consecutive upstream errors, rotating...`);
       retireAndRotateNode(target);
     }
@@ -479,6 +479,10 @@ const httpServer = http.createServer(async (req, res) => {
 });
 
 async function forwardHttp(req, res, attempt) {
+  // A delayed retry can land after the previous attempt already answered the
+  // client (e.g. a stalled response that later timed out). Never touch a
+  // response that has started - that is what caused headers-sent crashes.
+  if (res.headersSent || res.destroyed) return;
   let target;
   try {
     target = await getOrWarmProxy();
@@ -496,10 +500,12 @@ async function forwardHttp(req, res, attempt) {
   target.servingCount = (target.servingCount || 0) + 1;
 
   let finished = false;
-  function done(isErr) {
+  function done(isErr, waf = false) {
     if (finished) return;
     finished = true;
-    handleRequestDone(target, isErr);
+    // A Netflix 403/429 means the exit IP is WAF-banned, not flaky: weight it
+    // double so the node retires after ~3 bans instead of 5 slow failures.
+    handleRequestDone(target, isErr, waf ? 2 : 1);
   }
 
   const options = {
@@ -513,7 +519,9 @@ async function forwardHttp(req, res, attempt) {
     timeout: 8500,
   };
 
+  let responseStarted = false;
   const proxyReq = http.request(options, (proxyRes) => {
+    responseStarted = true;
     // Netflix WAF throttling (403/429) means this IP is burning out: count it
     // as a node failure so the rotator steers traffic away and retires the
     // node after a few consecutive hits, instead of feeding it more requests.
@@ -522,14 +530,18 @@ async function forwardHttp(req, res, attempt) {
     res.writeHead(proxyRes.statusCode, proxyRes.headers);
     proxyRes.pipe(res);
 
-    res.on('finish', () => done(wafHit));
+    res.on('finish', () => done(wafHit, wafHit));
   });
 
   proxyReq.on('timeout', () => {
     proxyReq.destroy();
     done(true);
+    // A timeout can fire mid-response when the node stalls halfway through the
+    // body. Retrying then would write a second set of headers onto the same
+    // response and crash, so only retry (or answer) before any bytes flowed.
+    if (responseStarted || res.headersSent || res.destroyed) return;
     if (attempt < 2) {
-      forwardHttp(req, res, attempt + 1);
+      setTimeout(() => forwardHttp(req, res, attempt + 1), 200);
     } else {
       res.writeHead(504, { 'Content-Type': 'text/plain' });
       res.end('Gateway Timeout');
@@ -538,8 +550,11 @@ async function forwardHttp(req, res, attempt) {
 
   proxyReq.on('error', () => {
     done(true);
+    if (responseStarted || res.headersSent || res.destroyed) return;
     if (attempt < 2) {
-      forwardHttp(req, res, attempt + 1);
+      // ECONNRESET from an overloaded wireproxy lands in ~50ms, so a short
+      // retry delay lets the retry land on a less saturated node quickly.
+      setTimeout(() => forwardHttp(req, res, attempt + 1), 200);
     } else {
       res.writeHead(502, { 'Content-Type': 'text/plain' });
       res.end('Bad Gateway');
@@ -656,7 +671,10 @@ async function forwardConnect(req, clientSocket, head, attempt) {
   clientSocket.once('close', () => done(false));
   upstreamSocket.once('close', () => done(false));
 
-  upstreamSocket.setTimeout(30000);
+  // Inactivity reap: a healthy Netflix check writes within a second of the
+  // CONNECT handshake. 9s of silence means the node's exit is stuck - kill the
+  // tunnel and count it as a failure before the bot's own 10s timeout does.
+  upstreamSocket.setTimeout(9000);
   upstreamSocket.on('timeout', () => {
     try { upstreamSocket.destroy(); } catch (e) {}
     try { clientSocket.destroy(); } catch (e) {}
@@ -713,7 +731,8 @@ async function handleSocks5(clientSocket, initialChunk) {
   clientSocket.once('close', () => onSocksDone(false));
   upstreamSocket.once('close', () => onSocksDone(false));
 
-  upstreamSocket.setTimeout(30000);
+  // Same inactivity reap as the CONNECT path: 9s of silence = stuck exit.
+  upstreamSocket.setTimeout(9000);
   upstreamSocket.on('timeout', () => {
     try { upstreamSocket.destroy(); } catch (e) {}
     try { clientSocket.destroy(); } catch (e) {}
