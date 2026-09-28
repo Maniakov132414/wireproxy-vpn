@@ -420,8 +420,14 @@ function waitForHealthyNode(timeoutMs = 12000) {
 // spreading requests evenly across all exit IPs is what keeps ANY upstream
 // (Netflix, other sites, bots) from rate-limiting a single IP.
 function pickLeastLoaded(candidates) {
-  const sorted = candidates.slice().sort((a, b) => (a.inFlight || 0) - (b.inFlight || 0));
-  const pool = sorted.slice(0, Math.min(3, sorted.length));
+  const min = Math.min(...candidates.map(n => n.inFlight || 0));
+  const lightest = candidates.filter(n => (n.inFlight || 0) === min);
+  // When many nodes tie at the lightest load (the normal idle case), pick
+  // randomly across ALL of them for maximum exit-IP diversity. Only fall back
+  // to the top-3 window when a single node is strictly lightest.
+  const pool = lightest.length >= 2
+    ? lightest
+    : candidates.slice().sort((a, b) => (a.inFlight || 0) - (b.inFlight || 0)).slice(0, 3);
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
