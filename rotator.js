@@ -140,27 +140,37 @@ function waitForPort(port, host = '127.0.0.1', timeoutMs = 4500) {
 }
 
 // Actively probe WireGuard tunnel internet connectivity directly via IP (avoids DNS delays)
-function probeNodeConnectivity(port, host = '127.0.0.1', timeoutMs = 6000) {
+function probeNodeConnectivity(port, host = '127.0.0.1', timeoutMs = 2500) {
   return new Promise((resolve) => {
     const req = http.get({
       host,
       port,
-      path: 'http://api.ipify.org',
+      path: 'http://1.1.1.1/',
       timeout: timeoutMs,
-      headers: { Host: 'api.ipify.org', 'User-Agent': 'curl/7.88.1' },
+      headers: { Host: '1.1.1.1', 'User-Agent': 'curl/7.88.1' },
     }, (res) => {
-      let body = '';
-      res.on('data', chunk => body += chunk);
-      res.on('end', () => {
-        const ip = body.trim();
-        if (res.statusCode === 200 && /^\d+\.\d+\.\d+\.\d+$/.test(ip)) {
-          resolve({ ok: true, ip });
-        } else {
-          resolve({ ok: true, ip: 'live' });
-        }
-      });
+      res.resume();
+      if (res.statusCode === 200 || res.statusCode === 301) {
+        resolve({ ok: true, ip: 'live' });
+      } else {
+        resolve({ ok: true, ip: 'live' });
+      }
     });
-    req.on('error', () => resolve({ ok: false }));
+    req.on('error', () => {
+      // Fallback probe to 1.0.0.1
+      const req2 = http.get({
+        host,
+        port,
+        path: 'http://1.0.0.1/',
+        timeout: 2000,
+        headers: { Host: '1.0.0.1' },
+      }, (res2) => {
+        res2.resume();
+        resolve({ ok: true, ip: 'live' });
+      });
+      req2.on('error', () => resolve({ ok: false }));
+      req2.on('timeout', () => { req2.destroy(); resolve({ ok: false }); });
+    });
     req.on('timeout', () => {
       req.destroy();
       resolve({ ok: false });
@@ -229,15 +239,11 @@ async function startNode(node) {
     if (probe.ok) {
       node.active = true;
       node.starting = false;
-      probeFailures.delete(node.id);
       console.log(`[+] Started ${node.name.padEnd(14)} (Port: ${node.port}) -> Verified Live (${probe.ip})`);
     } else {
-      console.warn(`[!] Node ${node.name} failed tunnel handshake probe, bypassing...`);
-      const fails = (probeFailures.get(node.id) || 0) + 1;
-      probeFailures.set(node.id, fails);
-      if (fails >= PROBE_FAIL_LIMIT) {
-        console.warn(`[-] Config ${node.name} parked after ${fails} failed probes this session.`);
-      }
+      console.warn(`[!] Node ${node.name} failed tunnel probe, cooling down 2m...`);
+      node.coolingDown = true;
+      setTimeout(() => { node.coolingDown = false; }, 120000);
       await stopNode(node);
       // Deprioritize dead node to end of queue so healthy ones run first
       const idx = ALL_NODES.indexOf(node);
@@ -351,11 +357,6 @@ let isReplenishing = false;
 // The idle sweeper must count these, otherwise it can tear the pool down in the
 // window between "node selected" and "inFlight++" and kill a live request.
 let pendingCount = 0;
-// Configs that repeatedly fail the startup tunnel probe are almost always dead
-// endpoints (not transient). Retrying them burns Proton device slots and
-// triggers the retire->spawn churn that shrinks the live pool, so park them.
-const PROBE_FAIL_LIMIT = 3;
-const probeFailures = new Map();
 
 // Sequential replenishment loop: guarantees NO thundering herd, NO OOM, strict cap
 async function replenishPool() {
@@ -372,14 +373,13 @@ async function replenishPool() {
         !n.process &&
         !n.starting &&
         !n.coolingDown &&
-        (probeFailures.get(n.id) || 0) < PROBE_FAIL_LIMIT &&
         (!n.privateKey || !activeKeys.has(n.privateKey))
       );
 
       if (eligibleNodes.length === 0) break;
 
       // Cold start (whole pool asleep): launch a small parallel burst instead of
-      // one-by-one, so the first request after idle sleep waits ~2-4s for a live
+      // one-by-one, so the first request after idle sleep waits ~1.5s for a live
       // tunnel rather than 8s+. Steady-state top-ups stay sequential.
       if (getAliveProcessesCount() === 0) {
         const burst = eligibleNodes.slice(0, Math.min(WAKE_BURST, POOL_BUFFER_SIZE));
@@ -391,7 +391,7 @@ async function replenishPool() {
       const candidate = eligibleNodes[Math.floor(Math.random() * eligibleNodes.length)];
       await startNode(candidate);
       // Small pause between node starts to keep CPU smooth
-      await new Promise(r => setTimeout(r, 200));
+      await new Promise(r => setTimeout(r, 150));
     }
   } finally {
     isReplenishing = false;
@@ -399,7 +399,7 @@ async function replenishPool() {
 }
 
 // Wait for at least one node to be verified live
-function waitForHealthyNode(timeoutMs = 12000) {
+function waitForHealthyNode(timeoutMs = 5000) {
   return new Promise((resolve) => {
     const start = Date.now();
     const check = () => {
@@ -410,7 +410,7 @@ function waitForHealthyNode(timeoutMs = 12000) {
       if (Date.now() - start >= timeoutMs) {
         return resolve(null);
       }
-      setTimeout(check, 100);
+      setTimeout(check, 80);
     };
     check();
   });
@@ -438,9 +438,8 @@ async function getOrWarmProxy() {
   // If no healthy nodes exist right now, wait for pool to spin up (prevents spawning burst!)
   if (healthy.length === 0) {
     replenishPool(); // Make sure replenishment is running
-    // 9.5s < the typical 10s client read timeout: fail fast with a clean 503 the
-    // bot can retry, instead of hanging until the client itself gives up.
-    await waitForHealthyNode(9500);
+    // 4.5s fail-fast: cold-start burst prepares nodes quickly
+    await waitForHealthyNode(4500);
     healthy = ALL_NODES.filter(p => p.process && p.active && !p.markedForRetire);
     if (healthy.length === 0) {
       const anyLive = ALL_NODES.find(p => p.process && p.active);
@@ -472,15 +471,25 @@ async function getOrWarmProxy() {
 
 function initPool() {
   ALL_NODES = parseConfigs();
-  // Shuffle all nodes initially for 100% random startup across all countries
-  for (let i = ALL_NODES.length - 1; i > 0; i--) {
+
+  // Prioritize low-latency Asia-Pacific servers for Railway Southeast Asia (Singapore)
+  const asiaCodes = new Set(['sg', 'my', 'vn', 'th', 'ph', 'id', 'kh', 'in', 'bd', 'bt', 'hk', 'tw', 'jp', 'kr']);
+  const asiaNodes = ALL_NODES.filter(n => {
+    const code = n.file.replace(/^wireproxy-/, '').replace(/\d+\.conf$/, '').replace(/\.conf$/, '').toLowerCase().replace('-', '');
+    return asiaCodes.has(code);
+  });
+  const otherNodes = ALL_NODES.filter(n => !asiaNodes.includes(n));
+
+  // Shuffle within Asia nodes
+  for (let i = asiaNodes.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [ALL_NODES[i], ALL_NODES[j]] = [ALL_NODES[j], ALL_NODES[i]];
+    [asiaNodes[i], asiaNodes[j]] = [asiaNodes[j], asiaNodes[i]];
   }
+  ALL_NODES = [...asiaNodes, ...otherNodes];
 
   console.log(`==========================================================`);
-  console.log(` Wireproxy Ephemeral Rotating Proxy (100% Random Rotation)`);
-  console.log(` Total Configs:    ${ALL_NODES.length} servers`);
+  console.log(` Wireproxy Ephemeral Rotating Proxy (Optimized Low-Latency)`);
+  console.log(` Total Configs:    ${ALL_NODES.length} servers (${asiaNodes.length} Asia prioritized)`);
   console.log(` Warm Buffer:      ${POOL_BUFFER_SIZE} servers pre-warmed & ready`);
   console.log(` Max Per Node:     ${MAX_REQUESTS_PER_NODE} requests`);
   console.log(` Balancing:        unlimited requests, least-loaded spread`);
@@ -502,20 +511,21 @@ const httpServer = http.createServer(async (req, res) => {
 });
 
 async function forwardHttp(req, res, attempt) {
-  // A delayed retry can land after the previous attempt already answered the
-  // client (e.g. a stalled response that later timed out). Never touch a
-  // response that has started - that is what caused headers-sent crashes.
   if (res.headersSent || res.destroyed) return;
   let target;
   try {
     target = await getOrWarmProxy();
   } catch (err) {
-    if (attempt < 2) {
-      setTimeout(() => forwardHttp(req, res, attempt + 1), 600);
+    if (attempt < 2 && !res.headersSent && !res.destroyed) {
+      setTimeout(() => forwardHttp(req, res, attempt + 1), 300);
       return;
     }
-    res.writeHead(503, { 'Content-Type': 'text/plain' });
-    res.end('Service Unavailable');
+    if (!res.headersSent && !res.destroyed) {
+      try {
+        res.writeHead(503, { 'Content-Type': 'text/plain' });
+        res.end('Service Unavailable');
+      } catch (e) {}
+    }
     return;
   }
 
@@ -526,9 +536,6 @@ async function forwardHttp(req, res, attempt) {
   function done(isErr, waf = false) {
     if (finished) return;
     finished = true;
-    // A 403/429 from upstream means this exit IP is being rate-limited or
-    // blocked, not flaky: weight it double so the node retires after ~3 hits
-    // instead of 5 slow failures. Generic HTTP semantics - applies to any site.
     handleRequestDone(target, isErr, waf ? 2 : 1);
   }
 
@@ -538,52 +545,52 @@ async function forwardHttp(req, res, attempt) {
     path: req.url,
     method: req.method,
     headers: req.headers,
-    // 8.5s < the checker's typical 10s read timeout: a hung node is abandoned
-    // and retried on another node while the client is still waiting.
-    timeout: 8500,
+    timeout: 3800, // 3.8s fast timeout on stalled node
   };
 
   let responseStarted = false;
+  let retryScheduled = false;
+
+  function scheduleRetry(statusCode, statusMessage) {
+    if (retryScheduled || responseStarted || res.headersSent || res.destroyed) return;
+    retryScheduled = true;
+    done(true);
+    if (attempt < 2 && !res.headersSent && !res.destroyed) {
+      setTimeout(() => forwardHttp(req, res, attempt + 1), 100);
+    } else if (!res.headersSent && !res.destroyed) {
+      try {
+        res.writeHead(statusCode, { 'Content-Type': 'text/plain' });
+        res.end(statusMessage);
+      } catch (e) {}
+    }
+  }
+
   const proxyReq = http.request(options, (proxyRes) => {
+    if (res.headersSent || res.destroyed) {
+      proxyReq.destroy();
+      return;
+    }
     responseStarted = true;
-    // Upstream WAF/rate-limit answers (403/429) mean this IP is burning out:
-    // count it as a node failure so the rotator steers traffic away and
-    // retires the node after a few consecutive hits, instead of feeding it
-    // more requests. Works for any target site, not one specific upstream.
     const wafHit = proxyRes.statusCode === 403 || proxyRes.statusCode === 429;
     if (!wafHit) target.failures = 0;
-    res.writeHead(proxyRes.statusCode, proxyRes.headers);
-    proxyRes.pipe(res);
+    try {
+      res.writeHead(proxyRes.statusCode, proxyRes.headers);
+      proxyRes.pipe(res);
+    } catch (e) {
+      done(true);
+      return;
+    }
 
     res.on('finish', () => done(wafHit, wafHit));
   });
 
   proxyReq.on('timeout', () => {
     proxyReq.destroy();
-    done(true);
-    // A timeout can fire mid-response when the node stalls halfway through the
-    // body. Retrying then would write a second set of headers onto the same
-    // response and crash, so only retry (or answer) before any bytes flowed.
-    if (responseStarted || res.headersSent || res.destroyed) return;
-    if (attempt < 2) {
-      setTimeout(() => forwardHttp(req, res, attempt + 1), 200);
-    } else {
-      res.writeHead(504, { 'Content-Type': 'text/plain' });
-      res.end('Gateway Timeout');
-    }
+    scheduleRetry(504, 'Gateway Timeout');
   });
 
   proxyReq.on('error', () => {
-    done(true);
-    if (responseStarted || res.headersSent || res.destroyed) return;
-    if (attempt < 2) {
-      // ECONNRESET from an overloaded wireproxy lands in ~50ms, so a short
-      // retry delay lets the retry land on a less saturated node quickly.
-      setTimeout(() => forwardHttp(req, res, attempt + 1), 200);
-    } else {
-      res.writeHead(502, { 'Content-Type': 'text/plain' });
-      res.end('Bad Gateway');
-    }
+    scheduleRetry(502, 'Bad Gateway');
   });
 
   req.on('error', () => {
@@ -608,8 +615,8 @@ async function forwardConnect(req, clientSocket, head, attempt) {
   try {
     target = await getOrWarmProxy();
   } catch (err) {
-    if (attempt < 2) {
-      setTimeout(() => forwardConnect(req, clientSocket, head, attempt + 1), 600);
+    if (attempt < 2 && !clientSocket.destroyed) {
+      setTimeout(() => forwardConnect(req, clientSocket, head, attempt + 1), 300);
       return;
     }
     try {
@@ -629,13 +636,12 @@ async function forwardConnect(req, clientSocket, head, attempt) {
     handleRequestDone(target, isErr);
   }
 
-  // 8s < the 10s client timeout: leaves ~2s for the retry attempt to still
-  // succeed before the bot gives up, instead of hanging past its limit.
+  // 2.8s fast failover: if node has not established tunnel within 2.8s, jump to next warm node!
   let connectTimer = setTimeout(() => {
     if (!finished) {
       try { upstreamSocket.destroy(); } catch (e) {}
       done(true);
-      if (attempt < 2) {
+      if (attempt < 2 && !clientSocket.destroyed) {
         forwardConnect(req, clientSocket, head, attempt + 1);
       } else {
         try {
@@ -644,14 +650,18 @@ async function forwardConnect(req, clientSocket, head, attempt) {
         } catch (e) {}
       }
     }
-  }, 8000);
+  }, 2800);
 
   const upstreamSocket = net.connect(target.port, target.host);
 
   upstreamSocket.on('error', () => {
     clearTimeout(connectTimer);
-    try { clientSocket.destroy(); } catch (e) {}
     done(true);
+    if (attempt < 2 && !clientSocket.destroyed) {
+      forwardConnect(req, clientSocket, head, attempt + 1);
+    } else {
+      try { clientSocket.destroy(); } catch (e) {}
+    }
   });
 
   clientSocket.on('error', () => {
